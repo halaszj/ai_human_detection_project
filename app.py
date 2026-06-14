@@ -233,14 +233,27 @@ if not os.path.exists(MODEL_PATH):
 
 bundle = joblib.load(MODEL_PATH)
 
-if isinstance(bundle, dict) and "models" in bundle:
-    models = bundle["models"]
+if isinstance(bundle, dict):
+    if "models" in bundle:
+        models = bundle["models"]
+    else:
+        models = bundle
 else:
-    models = bundle
+    models = {"Trained Model": bundle}
 
-if not isinstance(models, dict):
-    st.error("The loaded model bundle is not in the expected format.")
+valid_models = {}
+
+for name, model in models.items():
+    if hasattr(model, "predict"):
+        valid_models[name] = model
+
+if not valid_models:
+    st.error("No usable trained models were found in the model bundle.")
+    st.write("Loaded object type:", type(bundle))
+    st.write("Bundle contents:", bundle if isinstance(bundle, dict) else "Not a dictionary")
     st.stop()
+
+models = valid_models
 
 
 # ---------------------------------------------------------
