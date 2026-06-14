@@ -8,6 +8,7 @@ import streamlit as st
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+from text_utils import clean_text, LinguisticFeatureExtractor
 
 try:
     import PyPDF2
