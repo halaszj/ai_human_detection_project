@@ -116,12 +116,16 @@ def get_text_statistics(text):
 def predict_with_model(model, text):
     cleaned = clean_text(text)
 
+    input_df = pd.DataFrame({
+        "text": [text],
+        "clean_text": [cleaned]
+    })
+
     try:
-        # Most saved sklearn pipelines accept raw/cleaned text
-        pred = model.predict([cleaned])[0]
+        pred = model.predict(input_df)[0]
 
         if hasattr(model, "predict_proba"):
-            proba = model.predict_proba([cleaned])[0]
+            proba = model.predict_proba(input_df)[0]
             confidence = float(np.max(proba))
         else:
             confidence = 0.50
@@ -129,25 +133,8 @@ def predict_with_model(model, text):
         label = "AI-written" if int(pred) == 1 else "Human-written"
         return label, confidence
 
-    except Exception:
-        try:
-            # Some models need 2D linguistic features instead of text
-            extractor = LinguisticFeatureExtractor()
-            features = extractor.transform([cleaned])
-
-            pred = model.predict(features)[0]
-
-            if hasattr(model, "predict_proba"):
-                proba = model.predict_proba(features)[0]
-                confidence = float(np.max(proba))
-            else:
-                confidence = 0.50
-
-            label = "AI-written" if int(pred) == 1 else "Human-written"
-            return label, confidence
-
-        except Exception as e:
-            return f"Prediction error: {e}", 0.0
+    except Exception as e:
+        return f"Prediction error: {e}", 0.0
 
 
 def explain_prediction(model, text, top_n=10):
