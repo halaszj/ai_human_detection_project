@@ -1,0 +1,15 @@
+numpy<2.0
+pandas
+scipy
+scikit-learn
+openpyxl
+streamlit
+joblib
+matplotlib
+seaborn
+gensim
+tensorflow
+keras
+python-docx
+pypdf
+reportlab
