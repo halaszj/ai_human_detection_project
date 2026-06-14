@@ -1,14 +1,28 @@
-import io
 import os
-from datetime import datetime
-
+import re
+import io
 import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from text_utils import clean_text, text_statistics, sentence_lengths
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
+try:
+    import PyPDF2
+except ImportError:
+    PyPDF2 = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
+
+
+# ---------------------------------------------------------
+# Required custom class for loading saved pickle models
+# ---------------------------------------------------------
 class LinguisticFeatureExtractor(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         return self
@@ -19,7 +33,7 @@ class LinguisticFeatureExtractor(BaseEstimator, TransformerMixin):
         for text in X:
             text = str(text)
             words = text.split()
-            sentences = re.split(r'[.!?]+', text)
+            sentences = re.split(r"[.!?]+", text)
             sentences = [s for s in sentences if s.strip()]
 
             word_count = len(words)
@@ -39,242 +53,360 @@ class LinguisticFeatureExtractor(BaseEstimator, TransformerMixin):
             ])
 
         return np.array(features)
-        
-# Optional file readers
-try:
-    from docx import Document
-except Exception:
-    Document = None
 
-try:
-    from pypdf import PdfReader
-except Exception:
-    PdfReader = None
 
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-except Exception:
-    canvas = None
-    letter = None
+# ---------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------
+def clean_text(text):
+    text = str(text).lower()
+    text = re.sub(r"[^a-z\s]", " ", text)
+    tokens = text.split()
+    tokens = [word for word in tokens if word not in ENGLISH_STOP_WORDS]
+    return " ".join(tokens)
 
-st.set_page_config(page_title='AI vs. Human Text Detector', layout='wide')
-st.title('AI vs. Human Text Detector')
-st.write('Upload a document or paste text, choose a model, and review prediction results, text statistics, feature explanations, and model comparisons.')
 
-MODEL_PATH = os.path.join('models', 'all_models.pkl')
+def extract_pdf_text(uploaded_file):
+    if PyPDF2 is None:
+        return "PyPDF2 is not installed."
 
-@st.cache_resource
-def load_models():
-    if not os.path.exists(MODEL_PATH):
-        return None
-    return joblib.load(MODEL_PATH)
+    reader = PyPDF2.PdfReader(uploaded_file)
+    text = ""
 
-bundle = load_models()
-
-if bundle is None:
-    st.error('Model bundle not found. Run `python train_app_models.py` first to create `models/all_models.pkl`.')
-    st.stop()
-
-models = bundle['models']
-metrics_df = bundle.get('metrics', pd.DataFrame())
-label_map = bundle.get('label_map', {0: 'Human-written', 1: 'AI-written'})
-
-# ---------- File reading helpers ----------
-def extract_docx(uploaded_file):
-    if Document is None:
-        st.warning('DOCX support requires python-docx. Install it with: pip install python-docx')
-        return ''
-    doc = Document(uploaded_file)
-    return '\n'.join([p.text for p in doc.paragraphs if p.text.strip()])
-
-def extract_pdf(uploaded_file):
-    if PdfReader is None:
-        st.warning('PDF support requires pypdf. Install it with: pip install pypdf')
-        return ''
-    reader = PdfReader(uploaded_file)
-    pages = []
     for page in reader.pages:
-        pages.append(page.extract_text() or '')
-    return '\n'.join(pages)
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
 
-def read_uploaded_file(uploaded_file):
-    if uploaded_file is None:
-        return ''
-    name = uploaded_file.name.lower()
-    if name.endswith('.txt'):
-        return uploaded_file.read().decode('utf-8', errors='ignore')
-    if name.endswith('.docx'):
-        return extract_docx(uploaded_file)
-    if name.endswith('.pdf'):
-        return extract_pdf(uploaded_file)
-    return ''
+    return text.strip()
 
-# ---------- Prediction helpers ----------
+
+def extract_docx_text(uploaded_file):
+    if docx is None:
+        return "python-docx is not installed."
+
+    document = docx.Document(uploaded_file)
+    paragraphs = [p.text for p in document.paragraphs]
+    return "\n".join(paragraphs).strip()
+
+
+def get_text_statistics(text):
+    words = text.split()
+    sentences = re.split(r"[.!?]+", text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    word_count = len(words)
+    sentence_count = len(sentences)
+    unique_words = len(set([w.lower() for w in words]))
+
+    avg_sentence_length = word_count / sentence_count if sentence_count else 0
+    vocab_richness = unique_words / word_count if word_count else 0
+
+    sentence_lengths = [len(s.split()) for s in sentences]
+
+    return {
+        "Word Count": word_count,
+        "Sentence Count": sentence_count,
+        "Average Sentence Length": round(avg_sentence_length, 2),
+        "Vocabulary Richness": round(vocab_richness, 3),
+        "Sentence Lengths": sentence_lengths
+    }
+
+
 def predict_with_model(model, text):
-    row = pd.DataFrame({'text': [text], 'clean_text': [clean_text(text)]})
-    pred = int(model.predict(row)[0])
-    if hasattr(model, 'predict_proba'):
-        ai_prob = float(model.predict_proba(row)[0][1])
-    elif hasattr(model, 'decision_function'):
-        score = float(model.decision_function(row)[0])
-        ai_prob = 1 / (1 + np.exp(-score))
-    else:
-        ai_prob = 0.5
-    confidence = ai_prob if pred == 1 else 1 - ai_prob
-    return pred, ai_prob, confidence
-
-def influential_terms(text, model, top_n=10):
-    """Simple explanation: show important TF-IDF words present in this document when available."""
     cleaned = clean_text(text)
-    tokens = cleaned.split()
-    if not tokens:
-        return pd.DataFrame({'Feature': [], 'Reason': []})
 
     try:
-        features = model.named_steps['features']
-        tfidf = features.named_transformers_['tfidf']
-        vocab = set(tfidf.get_feature_names_out())
-        present = [t for t in tokens if t in vocab]
-        term_counts = pd.Series(present).value_counts().head(top_n)
-        return pd.DataFrame({
-            'Feature': term_counts.index,
-            'Count in text': term_counts.values,
-            'Reason': ['High-frequency model vocabulary term in this document'] * len(term_counts)
-        })
+        pred = model.predict([cleaned])[0]
+
+        if hasattr(model, "predict_proba"):
+            proba = model.predict_proba([cleaned])[0]
+            confidence = float(np.max(proba))
+        elif hasattr(model, "decision_function"):
+            score = model.decision_function([cleaned])
+            confidence = float(1 / (1 + np.exp(-np.max(score))))
+        else:
+            confidence = 0.50
+
+        label = "AI-written" if int(pred) == 1 else "Human-written"
+
+        return label, confidence
+
+    except Exception as e:
+        return f"Prediction error: {e}", 0.0
+
+
+def explain_prediction(model, text, top_n=10):
+    cleaned = clean_text(text)
+
+    try:
+        if hasattr(model, "named_steps"):
+            vectorizer = None
+            classifier = None
+
+            for step_name, step_obj in model.named_steps.items():
+                if hasattr(step_obj, "get_feature_names_out"):
+                    vectorizer = step_obj
+                if hasattr(step_obj, "coef_"):
+                    classifier = step_obj
+
+            if vectorizer is not None and classifier is not None:
+                feature_names = vectorizer.get_feature_names_out()
+                vectorized_text = vectorizer.transform([cleaned])
+
+                coefs = classifier.coef_[0]
+                active_indices = vectorized_text.nonzero()[1]
+
+                word_scores = []
+                for idx in active_indices:
+                    word_scores.append((feature_names[idx], coefs[idx]))
+
+                word_scores = sorted(
+                    word_scores,
+                    key=lambda x: abs(x[1]),
+                    reverse=True
+                )
+
+                return word_scores[:top_n]
+
     except Exception:
-        return pd.DataFrame({
-            'Feature': pd.Series(tokens).value_counts().head(top_n).index,
-            'Count in text': pd.Series(tokens).value_counts().head(top_n).values,
-            'Reason': ['Frequently used cleaned word'] * min(top_n, len(set(tokens)))
-        })
+        pass
 
-def build_text_report(text, selected_model_name, selected_result, comparison_df, stats):
-    pred_label, ai_prob, confidence = selected_result
-    lines = []
-    lines.append('AI vs. Human Text Detection Report')
-    lines.append(f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-    lines.append('')
-    lines.append(f'Selected model: {selected_model_name}')
-    lines.append(f'Prediction: {pred_label}')
-    lines.append(f'AI probability: {ai_prob:.2%}')
-    lines.append(f'Confidence: {confidence:.2%}')
-    lines.append('')
-    lines.append('Text Statistics')
-    for k, v in stats.items():
-        lines.append(f'- {k}: {v}')
-    lines.append('')
-    lines.append('Model Comparison')
-    lines.append(comparison_df.to_string(index=False))
-    lines.append('')
-    lines.append('Input Text Preview')
-    lines.append(text[:1500])
-    return '\n'.join(lines)
+    words = cleaned.split()
+    common_words = pd.Series(words).value_counts().head(top_n)
 
-def build_pdf_report(report_text):
-    if canvas is None:
-        return None
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    y = height - 40
-    for line in report_text.split('\n'):
-        if y < 40:
-            c.showPage()
-            y = height - 40
-        c.drawString(40, y, line[:110])
-        y -= 14
-    c.save()
-    buffer.seek(0)
-    return buffer.getvalue()
+    return list(common_words.items())
 
-# ---------- Input section ----------
-st.sidebar.header('Input Options')
-input_mode = st.sidebar.radio('Choose input type', ['Paste text', 'Upload file'])
 
-text_input = ''
-if input_mode == 'Paste text':
-    text_input = st.text_area('Paste or type text here:', height=260)
+def create_report(text, selected_model, prediction, confidence, stats, comparison_df):
+    report = []
+    report.append("AI vs Human Text Detection Report")
+    report.append("=" * 40)
+    report.append("")
+    report.append(f"Selected Model: {selected_model}")
+    report.append(f"Prediction: {prediction}")
+    report.append(f"Confidence: {confidence:.2%}")
+    report.append("")
+    report.append("Text Statistics")
+    report.append("-" * 40)
+
+    for key, value in stats.items():
+        if key != "Sentence Lengths":
+            report.append(f"{key}: {value}")
+
+    report.append("")
+    report.append("Model Comparison")
+    report.append("-" * 40)
+
+    if comparison_df is not None and not comparison_df.empty:
+        report.append(comparison_df.to_string(index=False))
+
+    report.append("")
+    report.append("Input Text Preview")
+    report.append("-" * 40)
+    report.append(text[:2000])
+
+    return "\n".join(report)
+
+
+# ---------------------------------------------------------
+# Streamlit app
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="AI vs Human Text Detector",
+    page_icon="🤖",
+    layout="wide"
+)
+
+st.title("AI vs Human Text Detection App")
+st.write(
+    "Upload a document or paste text, choose a model, and predict whether the text was written by a human or generated by AI."
+)
+
+MODEL_PATH = "models/all_models.pkl"
+
+if not os.path.exists(MODEL_PATH):
+    st.error(
+        "Model bundle not found. Run `python train_app_models.py` first to create `models/all_models.pkl`."
+    )
+    st.stop()
+
+bundle = joblib.load(MODEL_PATH)
+
+if isinstance(bundle, dict) and "models" in bundle:
+    models = bundle["models"]
 else:
-    uploaded = st.file_uploader('Upload .pdf, .docx, or .txt file', type=['pdf', 'docx', 'txt'])
-    if uploaded:
-        text_input = read_uploaded_file(uploaded)
-        st.text_area('Extracted text preview:', text_input[:5000], height=220)
+    models = bundle
 
-selected_model_name = st.sidebar.selectbox('Choose trained model', list(models.keys()))
+if not isinstance(models, dict):
+    st.error("The loaded model bundle is not in the expected format.")
+    st.stop()
+
+
+# ---------------------------------------------------------
+# Input section
+# ---------------------------------------------------------
+st.sidebar.header("Input Options")
+
+input_method = st.sidebar.radio(
+    "Choose input method:",
+    ["Type or paste text", "Upload file"]
+)
+
+text_input = ""
+
+if input_method == "Type or paste text":
+    text_input = st.text_area(
+        "Enter text to analyze:",
+        height=250,
+        placeholder="Paste or type text here..."
+    )
+
+else:
+    uploaded_file = st.file_uploader(
+        "Upload a .pdf, .docx, or .txt file",
+        type=["pdf", "docx", "txt"]
+    )
+
+    if uploaded_file is not None:
+        file_name = uploaded_file.name.lower()
+
+        if file_name.endswith(".pdf"):
+            text_input = extract_pdf_text(uploaded_file)
+
+        elif file_name.endswith(".docx"):
+            text_input = extract_docx_text(uploaded_file)
+
+        elif file_name.endswith(".txt"):
+            text_input = uploaded_file.read().decode("utf-8", errors="ignore")
+
+        st.text_area("Extracted Text", text_input, height=250)
+
+
+if not text_input.strip():
+    st.info("Enter text or upload a file to begin.")
+    st.stop()
+
+
+# ---------------------------------------------------------
+# Model selector
+# ---------------------------------------------------------
+model_names = list(models.keys())
+
+selected_model_name = st.sidebar.selectbox(
+    "Choose trained model:",
+    model_names
+)
+
 selected_model = models[selected_model_name]
 
-analyze = st.button('Analyze Text', type='primary')
 
-if analyze:
-    if not text_input.strip():
-        st.warning('Please enter text or upload a supported file first.')
-        st.stop()
+# ---------------------------------------------------------
+# Main prediction
+# ---------------------------------------------------------
+st.header("Prediction Result")
 
-    stats = text_statistics(text_input)
-    pred, ai_prob, confidence = predict_with_model(selected_model, text_input)
-    selected_label = label_map.get(pred, str(pred))
+prediction, confidence = predict_with_model(selected_model, text_input)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric('Prediction', selected_label)
-    col2.metric('AI Probability', f'{ai_prob:.2%}')
-    col3.metric('Confidence', f'{confidence:.2%}')
-    st.progress(ai_prob)
+col1, col2 = st.columns(2)
 
-    st.subheader('Text Statistics')
-    stat_df = pd.DataFrame(stats.items(), columns=['Statistic', 'Value'])
-    st.dataframe(stat_df, use_container_width=True)
+with col1:
+    st.metric("Prediction", prediction)
 
-    lengths = sentence_lengths(text_input)
-    st.write('Sentence length distribution')
-    st.bar_chart(pd.DataFrame({'Sentence Length': lengths}))
+with col2:
+    st.metric("Confidence", f"{confidence:.2%}")
 
-    st.subheader('Explanation: Influential Features')
-    st.write('This section gives an interpretable approximation by showing document terms and linguistic patterns that the model can use. For tree/boosting/neural models, exact internal reasoning is less transparent, so this should be treated as an explanation aid rather than a perfect proof.')
-    explanation_df = influential_terms(text_input, selected_model)
+
+# ---------------------------------------------------------
+# Text statistics
+# ---------------------------------------------------------
+st.header("Text Statistics")
+
+stats = get_text_statistics(text_input)
+
+stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+
+stat_col1.metric("Word Count", stats["Word Count"])
+stat_col2.metric("Sentence Count", stats["Sentence Count"])
+stat_col3.metric("Avg. Sentence Length", stats["Average Sentence Length"])
+stat_col4.metric("Vocabulary Richness", stats["Vocabulary Richness"])
+
+if stats["Sentence Lengths"]:
+    st.subheader("Sentence Length Distribution")
+    sentence_df = pd.DataFrame({
+        "Sentence Number": range(1, len(stats["Sentence Lengths"]) + 1),
+        "Word Count": stats["Sentence Lengths"]
+    })
+    st.bar_chart(sentence_df.set_index("Sentence Number"))
+
+
+# ---------------------------------------------------------
+# Explanation section
+# ---------------------------------------------------------
+st.header("Explanation Section")
+
+st.write(
+    "The following words or features had the strongest influence on the selected model prediction when available. "
+    "For models where direct feature weights are unavailable, the app shows the most frequent cleaned words."
+)
+
+explanation = explain_prediction(selected_model, text_input)
+
+if explanation:
+    explanation_df = pd.DataFrame(
+        explanation,
+        columns=["Feature / Word", "Influence or Frequency"]
+    )
     st.dataframe(explanation_df, use_container_width=True)
+else:
+    st.write("No explanation available for this model.")
 
-    st.write('Linguistic indicators used by the model include word count, average sentence length, vocabulary richness, punctuation count, and uppercase ratio.')
 
-    st.subheader('Model Comparison View')
-    comparison_rows = []
-    for name, model in models.items():
-        p, prob, conf = predict_with_model(model, text_input)
-        comparison_rows.append({
-            'Model': name,
-            'Prediction': label_map.get(p, str(p)),
-            'AI Probability': f'{prob:.2%}',
-            'Confidence': f'{conf:.2%}'
-        })
-    comparison_df = pd.DataFrame(comparison_rows)
-    st.dataframe(comparison_df, use_container_width=True)
+# ---------------------------------------------------------
+# Model comparison
+# ---------------------------------------------------------
+st.header("Model Comparison View")
 
-    if not metrics_df.empty:
-        st.subheader('Saved Model Evaluation Metrics')
-        st.dataframe(metrics_df, use_container_width=True)
+comparison_results = []
 
-    st.subheader('Report Download')
-    report_text = build_text_report(
-        text_input,
-        selected_model_name,
-        (selected_label, ai_prob, confidence),
-        comparison_df,
-        stats
-    )
-    st.download_button(
-        'Download Text Report',
-        data=report_text,
-        file_name='ai_text_detection_report.txt',
-        mime='text/plain'
-    )
+for name, model in models.items():
+    pred_label, pred_conf = predict_with_model(model, text_input)
 
-    pdf_bytes = build_pdf_report(report_text)
-    if pdf_bytes:
-        st.download_button(
-            'Download PDF Report',
-            data=pdf_bytes,
-            file_name='ai_text_detection_report.pdf',
-            mime='application/pdf'
-        )
-    else:
-        st.info('PDF download requires reportlab. Install it with: pip install reportlab')
+    comparison_results.append({
+        "Model": name,
+        "Prediction": pred_label,
+        "Confidence": round(pred_conf, 4)
+    })
+
+comparison_df = pd.DataFrame(comparison_results)
+st.dataframe(comparison_df, use_container_width=True)
+
+
+# ---------------------------------------------------------
+# Report download
+# ---------------------------------------------------------
+st.header("Download Report")
+
+report_text = create_report(
+    text=text_input,
+    selected_model=selected_model_name,
+    prediction=prediction,
+    confidence=confidence,
+    stats=stats,
+    comparison_df=comparison_df
+)
+
+st.download_button(
+    label="Download Text Report",
+    data=report_text,
+    file_name="ai_text_detection_report.txt",
+    mime="text/plain"
+)
+
+
+# ---------------------------------------------------------
+# Footer
+# ---------------------------------------------------------
+st.caption(
+    "Project 1: AI vs Human Text Detection — includes text input/upload, model selection, prediction, explanation, statistics, model comparison, and report download."
+)
