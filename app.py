@@ -21,40 +21,6 @@ except ImportError:
     docx = None
 
 
-# ---------------------------------------------------------
-# Required custom class for loading saved pickle models
-# ---------------------------------------------------------
-class LinguisticFeatureExtractor(BaseEstimator, TransformerMixin):
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        features = []
-
-        for text in X:
-            text = str(text)
-            words = text.split()
-            sentences = re.split(r"[.!?]+", text)
-            sentences = [s for s in sentences if s.strip()]
-
-            word_count = len(words)
-            char_count = len(text)
-            sentence_count = len(sentences)
-            avg_word_length = np.mean([len(w) for w in words]) if words else 0
-            avg_sentence_length = word_count / sentence_count if sentence_count else 0
-            vocab_richness = len(set(words)) / word_count if word_count else 0
-
-            features.append([
-                word_count,
-                char_count,
-                sentence_count,
-                avg_word_length,
-                avg_sentence_length,
-                vocab_richness
-            ])
-
-        return np.array(features)
-
 
 # ---------------------------------------------------------
 # Helper functions
