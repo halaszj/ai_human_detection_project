@@ -5,52 +5,44 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from fpdf import FPDF
 from text_utils import clean_text, LinguisticFeatureExtractor
 
 
-# =========================
-# Page setup
-# =========================
 st.set_page_config(
-    page_title="Project 1 - AI vs Human Text Detector",
+    page_title="AI vs Human Text Detector",
+    page_icon="🧠",
     layout="wide"
 )
 
-st.markdown(
-    """
-    <style>
-    .main-title {
-        font-size: 42px;
-        font-weight: 800;
-        margin-bottom: 0px;
-    }
-    .subtitle {
-        font-size: 18px;
-        color: #666;
-        margin-bottom: 25px;
-    }
-    .section-card {
-        padding: 20px;
-        border-radius: 14px;
-        border: 1px solid #ddd;
-        background-color: #fafafa;
-        margin-bottom: 20px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown("""
+<style>
+.main-title {
+    font-size: 42px;
+    font-weight: 800;
+}
+.subtitle {
+    font-size: 18px;
+    color: #666;
+    margin-bottom: 25px;
+}
+.result-card {
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+    background-color: #fafafa;
+    text-align: center;
+}
+</style>
+""", unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">Project 1 - AI vs Human Text Detection App</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🧠 AI vs Human Text Detection App</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="subtitle">Upload a document or paste text to predict whether it appears human-written or AI-generated.</div>',
+    '<div class="subtitle">Upload or paste text to classify it as human-written or AI-generated.</div>',
     unsafe_allow_html=True
 )
 
 
-# =========================
-# Model loading
-# =========================
 MODEL_FILES = {
     "SVM": "models/svm.pkl",
     "Decision Tree": "models/decision_tree.pkl",
@@ -87,9 +79,6 @@ if missing_models:
             st.write(path)
 
 
-# =========================
-# File extraction helpers
-# =========================
 def extract_pdf_text(uploaded_file):
     try:
         import PyPDF2
@@ -113,13 +102,11 @@ def extract_docx_text(uploaded_file):
         import docx
 
         document = docx.Document(uploaded_file)
-        paragraphs = [
-            paragraph.text.strip()
-            for paragraph in document.paragraphs
-            if paragraph.text.strip()
-        ]
-
-        return "\n".join(paragraphs)
+        return "\n".join(
+            p.text.strip()
+            for p in document.paragraphs
+            if p.text.strip()
+        )
 
     except Exception as e:
         return f"DOCX extraction error: {e}"
@@ -132,9 +119,6 @@ def extract_txt_text(uploaded_file):
         return f"TXT extraction error: {e}"
 
 
-# =========================
-# Text statistics
-# =========================
 def get_text_statistics(text):
     words = text.split()
     sentences = re.split(r"[.!?]+", text)
@@ -157,9 +141,6 @@ def get_text_statistics(text):
     }
 
 
-# =========================
-# Prediction helpers
-# =========================
 def make_model_input(text):
     return pd.DataFrame({
         "text": [text],
@@ -189,19 +170,23 @@ def predict_with_model(model, text):
         return f"Prediction error: {e}", 0.0
 
 
-def explain_prediction(model, text, top_n=10):
+def explain_prediction(model, text, top_n=12):
     cleaned = clean_text(text)
     words = cleaned.split()
 
     if not words:
-        return pd.DataFrame(columns=["Feature / Word", "Influence"])
+        return pd.DataFrame(columns=["Feature", "Influence", "Explanation"])
 
     try:
         if hasattr(model, "named_steps"):
             feature_step = model.named_steps.get("features", None)
             classifier = model.named_steps.get("classifier", None)
 
-            if feature_step is not None and classifier is not None and hasattr(classifier, "coef_"):
+            if (
+                feature_step is not None
+                and classifier is not None
+                and hasattr(classifier, "coef_")
+            ):
                 tfidf = feature_step.named_transformers_.get("tfidf", None)
 
                 if tfidf is not None:
@@ -213,15 +198,22 @@ def explain_prediction(model, text, top_n=10):
 
                     for idx in active_indices:
                         word = feature_names[idx]
-                        coef = classifier.coef_[0][idx]
-                        scores.append((word, float(coef)))
+                        coef = float(classifier.coef_[0][idx])
+                        direction = "AI influence" if coef > 0 else "Human influence"
 
-                    scores = sorted(scores, key=lambda x: abs(x[1]), reverse=True)
+                        scores.append({
+                            "Feature": word,
+                            "Influence": round(coef, 4),
+                            "Explanation": direction
+                        })
 
-                    return pd.DataFrame(
-                        scores[:top_n],
-                        columns=["Feature / Word", "Influence"]
+                    scores = sorted(
+                        scores,
+                        key=lambda x: abs(x["Influence"]),
+                        reverse=True
                     )
+
+                    return pd.DataFrame(scores[:top_n])
 
     except Exception:
         pass
@@ -229,18 +221,43 @@ def explain_prediction(model, text, top_n=10):
     common_words = pd.Series(words).value_counts().head(top_n)
 
     return pd.DataFrame({
-        "Feature / Word": common_words.index,
-        "Influence": common_words.values
+        "Feature": common_words.index,
+        "Influence": common_words.values,
+        "Explanation": "Most frequent cleaned words"
     })
 
 
-def create_report(text, run_mode, prediction, confidence, stats, results_df):
+def create_pdf_report(report_text):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=10)
+
+    for line in report_text.split("\n"):
+        safe_line = (
+            line.replace("–", "-")
+                .replace("—", "-")
+                .replace("“", '"')
+                .replace("”", '"')
+                .replace("’", "'")
+        )
+        pdf.multi_cell(0, 5, safe_line)
+
+    pdf_bytes = pdf.output(dest="S")
+
+    if isinstance(pdf_bytes, str):
+        pdf_bytes = pdf_bytes.encode("latin-1")
+
+    return pdf_bytes
+
+
+def create_report(text, run_mode, prediction, confidence, stats, results_df, explanation_df):
     report = []
     report.append("AI vs Human Text Detection Report")
     report.append("=" * 45)
     report.append("")
     report.append(f"Run Mode: {run_mode}")
-    report.append(f"Prediction: {prediction}")
+    report.append(f"Final Prediction: {prediction}")
     report.append(f"Confidence: {confidence:.2%}")
     report.append("")
     report.append("Text Statistics")
@@ -255,6 +272,10 @@ def create_report(text, run_mode, prediction, confidence, stats, results_df):
     report.append("-" * 45)
     report.append(results_df.to_string(index=False))
     report.append("")
+    report.append("Feature Explanation")
+    report.append("-" * 45)
+    report.append(explanation_df.to_string(index=False))
+    report.append("")
     report.append("Input Text Preview")
     report.append("-" * 45)
     report.append(text[:3000])
@@ -262,23 +283,20 @@ def create_report(text, run_mode, prediction, confidence, stats, results_df):
     return "\n".join(report)
 
 
-# =========================
-# Main page setup controls
-# =========================
 st.markdown("## 1. Analysis Setup")
 
-setup_col1, setup_col2, setup_col3 = st.columns([1.2, 1.2, 1.4])
+setup_col1, setup_col2, setup_col3 = st.columns(3)
 
 with setup_col1:
     input_method = st.radio(
-        "Input method",
+        "Input Method",
         ["Type or paste text", "Upload file"],
         horizontal=False
     )
 
 with setup_col2:
     run_mode = st.radio(
-        "Analysis mode",
+        "Analysis Mode",
         ["Run one selected model", "Run all models"],
         horizontal=False
     )
@@ -287,13 +305,10 @@ with setup_col3:
     selected_model_name = st.selectbox(
         "Model",
         list(models.keys()),
-        help="Used as the prediction model in single-model mode and as the explanation model in all-model mode."
+        help="Used for single-model prediction and feature explanation."
     )
 
 
-# =========================
-# Text input
-# =========================
 st.markdown("## 2. Text Input")
 
 text_input = ""
@@ -330,6 +345,7 @@ else:
             st.stop()
 
         st.success("File uploaded and text extracted successfully.")
+
         with st.expander("View extracted text"):
             st.text_area("Extracted text", text_input, height=250)
 
@@ -339,9 +355,6 @@ if not text_input.strip():
     st.stop()
 
 
-# =========================
-# Prediction results
-# =========================
 st.markdown("## 3. Prediction Results")
 
 if run_mode == "Run one selected model":
@@ -354,16 +367,22 @@ if run_mode == "Run one selected model":
         "Confidence": f"{confidence:.1%}"
     }])
 
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    col1.metric("Model", selected_model_name)
-    col2.metric("Prediction", prediction)
-    col3.metric("Confidence", f"{confidence:.1%}")
+    c1.metric("Model", selected_model_name)
+    c2.metric("Prediction", prediction)
+    c3.metric("Confidence", f"{confidence:.1%}")
 
     if prediction == "AI-written":
-        st.warning(f"The selected model predicts this text is **AI-written** with **{confidence:.1%} confidence**.")
+        st.warning(
+            f"The selected model predicts this text is **AI-written** "
+            f"with **{confidence:.1%} confidence**."
+        )
     elif prediction == "Human-written":
-        st.success(f"The selected model predicts this text is **Human-written** with **{confidence:.1%} confidence**.")
+        st.success(
+            f"The selected model predicts this text is **Human-written** "
+            f"with **{confidence:.1%} confidence**."
+        )
     else:
         st.error(prediction)
 
@@ -418,14 +437,33 @@ else:
     results_df = raw_results_df[["Model", "Prediction", "Confidence"]]
 
 
-st.subheader("Model Results")
+st.markdown("## 4. Model Comparison")
+
+if run_mode == "Run all models":
+    st.write("Side-by-side comparison of all six models:")
+
+    model_cols = st.columns(len(results_df))
+
+    for i, row in results_df.iterrows():
+        with model_cols[i]:
+            st.markdown(
+                f"""
+                <div class="result-card">
+                    <h4>{row['Model']}</h4>
+                    <p><strong>{row['Prediction']}</strong></p>
+                    <p>Confidence: {row['Confidence']}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+else:
+    st.write("Single selected model result:")
+
 st.dataframe(results_df, width="stretch")
 
 
-# =========================
-# Text statistics
-# =========================
-st.markdown("## 4. Text Statistics")
+st.markdown("## 5. Text Statistics")
 
 stats = get_text_statistics(text_input)
 
@@ -448,29 +486,21 @@ if stats["Sentence Lengths"]:
     st.bar_chart(sentence_df.set_index("Sentence"))
 
 
-# =========================
-# Explanation
-# =========================
-st.markdown("## 5. Explanation Section")
+st.markdown("## 6. Feature Explanation")
 
 explanation_model = models[selected_model_name]
-
-if run_mode == "Run one selected model":
-    st.write(f"Explanation for **{selected_model_name}**.")
-else:
-    st.write(
-        f"Explanation shown for **{selected_model_name}**. "
-        "This keeps the all-model report simple while still showing feature influence for one selected model."
-    )
-
 explanation_df = explain_prediction(explanation_model, text_input)
+
+st.write(
+    f"Feature explanation for **{selected_model_name}**. "
+    "Positive influence values lean toward AI-written text; negative values lean toward human-written text when available. "
+    "For models without direct coefficients, the app displays the most frequent cleaned words."
+)
+
 st.dataframe(explanation_df, width="stretch")
 
 
-# =========================
-# Report download
-# =========================
-st.markdown("## 6. Report Download")
+st.markdown("## 7. Report Download")
 
 report_text = create_report(
     text=text_input,
@@ -478,16 +508,32 @@ report_text = create_report(
     prediction=prediction,
     confidence=confidence,
     stats=stats,
-    results_df=results_df
+    results_df=results_df,
+    explanation_df=explanation_df
 )
 
-st.download_button(
-    label="Download Text Report",
-    data=report_text,
-    file_name="ai_text_detection_report.txt",
-    mime="text/plain"
-)
+pdf_bytes = create_pdf_report(report_text)
+
+download_col1, download_col2 = st.columns(2)
+
+with download_col1:
+    st.download_button(
+        label="📄 Download TXT Report",
+        data=report_text,
+        file_name="ai_text_detection_report.txt",
+        mime="text/plain"
+    )
+
+with download_col2:
+    st.download_button(
+        label="📑 Download PDF Report",
+        data=pdf_bytes,
+        file_name="ai_text_detection_report.pdf",
+        mime="application/pdf"
+    )
+
 
 st.caption(
-    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, prediction, explanation, statistics, model results, and report download."
+    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, "
+    "prediction, model comparison, feature explanation, text statistics, and downloadable report."
 )
