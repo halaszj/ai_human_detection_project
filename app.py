@@ -8,16 +8,50 @@ import streamlit as st
 from text_utils import clean_text, LinguisticFeatureExtractor
 
 
+# =========================
+# Page setup
+# =========================
 st.set_page_config(
     page_title="AI vs Human Text Detector",
-    page_icon="🤖",
+    page_icon="🧠",
     layout="wide"
 )
 
-st.title("AI vs Human Text Detection App")
-st.write("Upload a document or paste text to predict whether it appears human-written or AI-generated.")
+st.markdown(
+    """
+    <style>
+    .main-title {
+        font-size: 42px;
+        font-weight: 800;
+        margin-bottom: 0px;
+    }
+    .subtitle {
+        font-size: 18px;
+        color: #666;
+        margin-bottom: 25px;
+    }
+    .section-card {
+        padding: 20px;
+        border-radius: 14px;
+        border: 1px solid #ddd;
+        background-color: #fafafa;
+        margin-bottom: 20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown('<div class="main-title">🧠 AI vs Human Text Detection App</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="subtitle">Upload a document or paste text to predict whether it appears human-written or AI-generated.</div>',
+    unsafe_allow_html=True
+)
 
 
+# =========================
+# Model loading
+# =========================
 MODEL_FILES = {
     "SVM": "models/svm.pkl",
     "Decision Tree": "models/decision_tree.pkl",
@@ -54,6 +88,9 @@ if missing_models:
             st.write(path)
 
 
+# =========================
+# File extraction helpers
+# =========================
 def extract_pdf_text(uploaded_file):
     try:
         import PyPDF2
@@ -96,6 +133,9 @@ def extract_txt_text(uploaded_file):
         return f"TXT extraction error: {e}"
 
 
+# =========================
+# Text statistics
+# =========================
 def get_text_statistics(text):
     words = text.split()
     sentences = re.split(r"[.!?]+", text)
@@ -118,6 +158,9 @@ def get_text_statistics(text):
     }
 
 
+# =========================
+# Prediction helpers
+# =========================
 def make_model_input(text):
     return pd.DataFrame({
         "text": [text],
@@ -220,19 +263,46 @@ def create_report(text, run_mode, prediction, confidence, stats, results_df):
     return "\n".join(report)
 
 
-st.sidebar.header("Input Options")
+# =========================
+# Main page setup controls
+# =========================
+st.markdown("## 1. Analysis Setup")
 
-input_method = st.sidebar.radio(
-    "Choose input method:",
-    ["Type or paste text", "Upload file"]
-)
+setup_col1, setup_col2, setup_col3 = st.columns([1.2, 1.2, 1.4])
+
+with setup_col1:
+    input_method = st.radio(
+        "Input method",
+        ["Type or paste text", "Upload file"],
+        horizontal=False
+    )
+
+with setup_col2:
+    run_mode = st.radio(
+        "Analysis mode",
+        ["Run one selected model", "Run all models"],
+        horizontal=False
+    )
+
+with setup_col3:
+    selected_model_name = st.selectbox(
+        "Model",
+        list(models.keys()),
+        help="Used as the prediction model in single-model mode and as the explanation model in all-model mode."
+    )
+
+
+# =========================
+# Text input
+# =========================
+st.markdown("## 2. Text Input")
 
 text_input = ""
 
 if input_method == "Type or paste text":
     text_input = st.text_area(
-        "Enter text to analyze:",
-        height=300,
+        "Enter text to analyze",
+        height=280,
         placeholder="Paste or type text here..."
     )
 
@@ -252,9 +322,6 @@ else:
         elif file_name.endswith(".txt"):
             text_input = extract_txt_text(uploaded_file)
 
-        st.subheader("Extracted Text Preview")
-        st.text_area("Extracted text", text_input, height=250)
-
         if "extraction error" in text_input.lower():
             st.error(text_input)
             st.stop()
@@ -263,26 +330,20 @@ else:
             st.error("No text could be extracted from this file.")
             st.stop()
 
+        st.success("File uploaded and text extracted successfully.")
+        with st.expander("View extracted text"):
+            st.text_area("Extracted text", text_input, height=250)
+
 
 if not text_input.strip():
     st.info("Enter text or upload a file to begin.")
     st.stop()
 
 
-st.sidebar.header("Model Options")
-
-run_mode = st.sidebar.radio(
-    "Choose analysis mode:",
-    ["Run one selected model", "Run all models"]
-)
-
-selected_model_name = st.sidebar.selectbox(
-    "Choose model:",
-    list(models.keys())
-)
-
-
-st.header("Prediction Results")
+# =========================
+# Prediction results
+# =========================
+st.markdown("## 3. Prediction Results")
 
 if run_mode == "Run one selected model":
     selected_model = models[selected_model_name]
@@ -294,14 +355,16 @@ if run_mode == "Run one selected model":
         "Confidence": f"{confidence:.1%}"
     }])
 
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Model", selected_model_name)
+    col2.metric("Prediction", prediction)
+    col3.metric("Confidence", f"{confidence:.1%}")
+
     if prediction == "AI-written":
-        st.warning(
-            f"The selected model predicts this text is **AI-written** with **{confidence:.1%} confidence**."
-        )
+        st.warning(f"The selected model predicts this text is **AI-written** with **{confidence:.1%} confidence**.")
     elif prediction == "Human-written":
-        st.success(
-            f"The selected model predicts this text is **Human-written** with **{confidence:.1%} confidence**."
-        )
+        st.success(f"The selected model predicts this text is **Human-written** with **{confidence:.1%} confidence**.")
     else:
         st.error(prediction)
 
@@ -337,22 +400,10 @@ else:
     confidence = raw_results_df["Confidence_Value"].mean()
 
     summary_df = pd.DataFrame([
-        {
-            "Result": "Final Prediction",
-            "Value": prediction
-        },
-        {
-            "Result": "AI Votes",
-            "Value": f"{ai_votes}/{total_votes} ({ai_percent:.1%})"
-        },
-        {
-            "Result": "Human Votes",
-            "Value": f"{human_votes}/{total_votes} ({human_percent:.1%})"
-        },
-        {
-            "Result": "Average Confidence",
-            "Value": f"{confidence:.1%}"
-        }
+        {"Score": "Final Prediction", "Result": prediction},
+        {"Score": "AI Votes", "Result": f"{ai_votes}/{total_votes} ({ai_percent:.1%})"},
+        {"Score": "Human Votes", "Result": f"{human_votes}/{total_votes} ({human_percent:.1%})"},
+        {"Score": "Average Confidence", "Result": f"{confidence:.1%}"},
     ])
 
     st.subheader("Scoring Summary")
@@ -372,7 +423,10 @@ st.subheader("Model Results")
 st.dataframe(results_df, width="stretch")
 
 
-st.header("Text Statistics")
+# =========================
+# Text statistics
+# =========================
+st.markdown("## 4. Text Statistics")
 
 stats = get_text_statistics(text_input)
 
@@ -395,23 +449,29 @@ if stats["Sentence Lengths"]:
     st.bar_chart(sentence_df.set_index("Sentence"))
 
 
-st.header("Explanation Section")
+# =========================
+# Explanation
+# =========================
+st.markdown("## 5. Explanation Section")
+
+explanation_model = models[selected_model_name]
 
 if run_mode == "Run one selected model":
-    explanation_model = models[selected_model_name]
-    st.write(f"Showing explanation for **{selected_model_name}**.")
+    st.write(f"Explanation for **{selected_model_name}**.")
 else:
-    explanation_model = models[selected_model_name]
     st.write(
-        f"Showing explanation for the sidebar-selected model: **{selected_model_name}**. "
-        "For many models, this displays the most frequent cleaned words because direct feature weights are unavailable."
+        f"Explanation shown for **{selected_model_name}**. "
+        "This keeps the all-model report simple while still showing feature influence for one selected model."
     )
 
 explanation_df = explain_prediction(explanation_model, text_input)
 st.dataframe(explanation_df, width="stretch")
 
 
-st.header("Report Download")
+# =========================
+# Report download
+# =========================
+st.markdown("## 6. Report Download")
 
 report_text = create_report(
     text=text_input,
