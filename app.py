@@ -358,41 +358,41 @@ else:
 
     comparison_df_preview = pd.DataFrame(comparison_results)
 
-    st.dataframe(comparison_df_preview, use_container_width=True)
+# Majority vote summary only
+ai_votes = sum(
+    1 for r in comparison_results
+    if r["Prediction"] == "AI-written"
+)
 
-    # Majority vote summary
-    ai_votes = sum(
-        1 for r in comparison_results
-        if r["Prediction"] == "AI-written"
-    )
+human_votes = sum(
+    1 for r in comparison_results
+    if r["Prediction"] == "Human-written"
+)
 
-    human_votes = sum(
-        1 for r in comparison_results
-        if r["Prediction"] == "Human-written"
-    )
+final_prediction = (
+    "AI-written" if ai_votes > human_votes
+    else "Human-written"
+)
 
-    final_prediction = (
-        "AI-written" if ai_votes > human_votes else "Human-written"
-    )
+avg_confidence = np.mean([
+    r["Confidence"]
+    for r in comparison_results
+    if isinstance(r["Confidence"], (float, int))
+])
 
-    avg_confidence = np.mean([
-        r["Confidence"] for r in comparison_results
-        if isinstance(r["Confidence"], (float, int))
-    ])
+col1, col2, col3 = st.columns(3)
 
-    col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Final Vote", final_prediction)
 
-    with col1:
-        st.metric("Final Vote", final_prediction)
+with col2:
+    st.metric("AI Votes", ai_votes)
 
-    with col2:
-        st.metric("AI Votes", ai_votes)
+with col3:
+    st.metric("Average Confidence", f"{avg_confidence:.2%}")
 
-    with col3:
-        st.metric("Average Confidence", f"{avg_confidence:.2%}")
-
-    prediction = final_prediction
-    confidence = avg_confidence
+prediction = final_prediction
+confidence = avg_confidence
 
 
 # =========================
