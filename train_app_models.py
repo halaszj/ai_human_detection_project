@@ -25,7 +25,7 @@ from sklearn.tree import DecisionTreeClassifier
 from text_utils import clean_text, LinguisticFeatureExtractor
 
 RANDOM_STATE = 42
-DATA_FILE = 'train_data with labels(3).xlsx'
+DATA_FILE = 'train_data with labels.xlsx'
 MODEL_DIR = 'models'
 os.makedirs(MODEL_DIR, exist_ok=True)
 
