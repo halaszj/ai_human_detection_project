@@ -131,12 +131,20 @@ for name, (pipe, params, mode) in training_jobs.items():
     models[name] = best_model
     print(model_metrics)
 
-bundle = {
-    'models': models,
-    'metrics': pd.DataFrame(metrics),
-    'label_map': {0: 'Human-written', 1: 'AI-written'}
-}
 
-joblib.dump(bundle, os.path.join(MODEL_DIR, 'all_models.pkl'))
-pd.DataFrame(metrics).to_csv(os.path.join(MODEL_DIR, 'model_metrics.csv'), index=False)
-print('\nSaved models/all_models.pkl and models/model_metrics.csv')
+# Save each model individually
+for model_name, model in models.items():
+    filename = model_name.lower().replace(" ", "_") + ".pkl"
+    joblib.dump(model, os.path.join(MODEL_DIR, filename))
+
+# Save metrics separately
+metrics_df = pd.DataFrame(metrics)
+metrics_df.to_csv(
+    os.path.join(MODEL_DIR, "model_metrics.csv"),
+    index=False
+)
+
+print("Individual model files saved.")
+
+
+
