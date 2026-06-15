@@ -1,17 +1,3 @@
-# ============================================================
-# AI vs Human Text Detection Streamlit App
-# Project 1 - Streamlit Web Application
-#
-# Features:
-# - Type/paste text input
-# - PDF, DOCX, and TXT upload
-# - Single-model or all-model prediction
-# - Side-by-side model comparison
-# - Feature explanation section
-# - Text statistics
-# - TXT and PDF report download
-# ============================================================
-
 import os
 import re
 import joblib
@@ -23,73 +9,15 @@ from fpdf import FPDF
 from text_utils import clean_text, LinguisticFeatureExtractor
 
 
-# ============================================================
-# Page Configuration
-# ============================================================
-
 st.set_page_config(
     page_title="AI vs Human Text Detector",
     page_icon="🧠",
     layout="wide"
 )
 
+st.markdown("# 🧠 AI vs Human Text Detection App")
+st.write("Upload or paste text to classify it as human-written or AI-generated.")
 
-# ============================================================
-# Custom Styling
-# ============================================================
-
-st.markdown(
-    """
-    <style>
-    .main-title {
-        font-size: 42px;
-        font-weight: 800;
-        margin-bottom: 0px;
-    }
-
-    .subtitle {
-        font-size: 18px;
-        color: #666;
-        margin-bottom: 25px;
-    }
-
-    .result-card {
-        padding: 18px;
-        border-radius: 12px;
-        border: 1px solid #ddd;
-        background-color: #fafafa;
-        margin-bottom: 18px;
-        min-height: 215px;
-    }
-
-    .result-card h4 {
-        margin-bottom: 8px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-
-# ============================================================
-# Page Header
-# ============================================================
-
-st.markdown(
-    '<div class="main-title">🧠 AI vs Human Text Detection App</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitle">Upload or paste text to classify it as human-written or AI-generated.</div>',
-    unsafe_allow_html=True
-)
-
-
-# ============================================================
-# Model File Locations
-# ============================================================
-# These are the six individual model files created by train_app_models.py.
 
 MODEL_FILES = {
     "SVM": "models/svm.pkl",
@@ -100,12 +28,6 @@ MODEL_FILES = {
     "CNN for Text": "models/cnn_for_text.pkl",
 }
 
-
-# ============================================================
-# Load Models
-# ============================================================
-# @st.cache_resource prevents Streamlit from reloading the model files
-# every time the user interacts with the page.
 
 @st.cache_resource
 def load_models():
@@ -123,33 +45,19 @@ def load_models():
 
 models, missing_models = load_models()
 
-# Stop the app if no model files are found.
 if not models:
     st.error("No trained models were found in the models folder.")
-    st.write("Expected files:")
-    for path in MODEL_FILES.values():
-        st.code(path)
     st.stop()
 
-# Show missing models without stopping the app if at least one model exists.
 if missing_models:
     with st.expander("Missing model files"):
         for path in missing_models:
             st.write(path)
 
 
-# ============================================================
-# File Extraction Functions
-# ============================================================
-
 def extract_pdf_text(uploaded_file):
-    """
-    Extract text from a PDF file.
-    Note: This works for text-based PDFs, not scanned image PDFs.
-    """
     try:
         import PyPDF2
-
         reader = PyPDF2.PdfReader(uploaded_file)
         text = ""
 
@@ -165,51 +73,29 @@ def extract_pdf_text(uploaded_file):
 
 
 def extract_docx_text(uploaded_file):
-    """
-    Extract text from a Microsoft Word DOCX file.
-    """
     try:
         import docx
-
         document = docx.Document(uploaded_file)
 
-        paragraphs = [
-            paragraph.text.strip()
-            for paragraph in document.paragraphs
-            if paragraph.text.strip()
-        ]
-
-        return "\n".join(paragraphs)
+        return "\n".join(
+            p.text.strip()
+            for p in document.paragraphs
+            if p.text.strip()
+        )
 
     except Exception as e:
         return f"DOCX extraction error: {e}"
 
 
 def extract_txt_text(uploaded_file):
-    """
-    Extract text from a plain TXT file.
-    """
     try:
         return uploaded_file.read().decode("utf-8", errors="ignore")
     except Exception as e:
         return f"TXT extraction error: {e}"
 
 
-# ============================================================
-# Text Statistics
-# ============================================================
-
 def get_text_statistics(text):
-    """
-    Calculate basic text statistics required by the project:
-    - Word count
-    - Sentence count
-    - Average sentence length
-    - Vocabulary richness
-    - Sentence length distribution
-    """
     words = text.split()
-
     sentences = re.split(r"[.!?]+", text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
@@ -231,18 +117,7 @@ def get_text_statistics(text):
     }
 
 
-# ============================================================
-# Model Input and Prediction Functions
-# ============================================================
-
 def make_model_input(text):
-    """
-    Build the same input structure used during training.
-
-    The training pipeline expected two columns:
-    - text: original raw text
-    - clean_text: preprocessed text
-    """
     return pd.DataFrame({
         "text": [text],
         "clean_text": [clean_text(text)]
@@ -250,12 +125,6 @@ def make_model_input(text):
 
 
 def predict_with_model(model, text):
-    """
-    Run a single trained model against the provided text.
-    Returns:
-    - label: AI-written or Human-written
-    - confidence score
-    """
     X_input = make_model_input(text)
 
     try:
@@ -264,67 +133,61 @@ def predict_with_model(model, text):
         if hasattr(model, "predict_proba"):
             proba = model.predict_proba(X_input)[0]
             confidence = float(np.max(proba))
-
         elif hasattr(model, "decision_function"):
             score = model.decision_function(X_input)
             confidence = float(1 / (1 + np.exp(-np.max(score))))
-
         else:
             confidence = 0.50
 
         label = "AI-written" if int(pred) == 1 else "Human-written"
-
         return label, confidence
 
     except Exception as e:
         return f"Prediction error: {e}", 0.0
 
 
-def get_interpretation(prediction, confidence):
-    """
-    Convert model confidence into a human-readable strength label.
-    """
+def get_model_reason(model_name, prediction, confidence):
     if "Prediction error" in prediction:
-        return "Model error", "This model could not complete the prediction."
+        return "This model could not complete the prediction."
 
     if confidence >= 0.90:
-        strength = "Very strong"
+        confidence_text = "very high confidence"
     elif confidence >= 0.75:
-        strength = "Strong"
+        confidence_text = "strong confidence"
     elif confidence >= 0.60:
-        strength = "Moderate"
+        confidence_text = "moderate confidence"
     else:
-        strength = "Low"
+        confidence_text = "low confidence"
 
-    if prediction == "AI-written":
-        return (
-            strength,
-            "The model found patterns commonly associated with AI-generated text."
-        )
+    model_notes = {
+        "SVM": "SVM is sensitive to high-dimensional TF-IDF word patterns and separates texts based on vocabulary usage.",
+        "Decision Tree": "Decision Tree uses rule-based splits, so the prediction is influenced by specific text and linguistic feature thresholds.",
+        "AdaBoost": "AdaBoost combines several weak learners and focuses more heavily on text examples that are harder to classify.",
+        "FNN": "FNN uses learned combinations of TF-IDF and linguistic features rather than relying on one simple rule.",
+        "LSTM": "This deployed version uses a lightweight neural-style classifier trained on the same engineered features for app stability.",
+        "CNN for Text": "This deployed version uses a lightweight neural-style classifier intended to approximate phrase-pattern detection in the app.",
+    }
 
-    if prediction == "Human-written":
-        return (
-            strength,
-            "The model found patterns commonly associated with human-written text."
-        )
+    direction = (
+        "The text was classified as AI-written because its patterns were closer to AI-labeled examples in the training data."
+        if prediction == "AI-written"
+        else "The text was classified as Human-written because its patterns were closer to human-labeled examples in the training data."
+    )
 
-    return "Mixed", "The result is unclear or divided."
+    return f"{model_notes.get(model_name, 'This model uses the trained text features to classify the input.')} {direction} The result was made with {confidence_text}."
 
 
-# ============================================================
-# Feature Explanation
-# ============================================================
+def get_strength(confidence):
+    if confidence >= 0.90:
+        return "Very strong"
+    if confidence >= 0.75:
+        return "Strong"
+    if confidence >= 0.60:
+        return "Moderate"
+    return "Low"
+
 
 def explain_prediction(model, text, top_n=12):
-    """
-    Shows which features/words influenced the prediction.
-
-    For linear models with coefficients, this attempts to show TF-IDF terms
-    and whether they push toward AI or Human.
-
-    For models without accessible coefficients, it falls back to most frequent
-    cleaned words from the input.
-    """
     cleaned = clean_text(text)
     words = cleaned.split()
 
@@ -336,11 +199,7 @@ def explain_prediction(model, text, top_n=12):
             feature_step = model.named_steps.get("features", None)
             classifier = model.named_steps.get("classifier", None)
 
-            if (
-                feature_step is not None
-                and classifier is not None
-                and hasattr(classifier, "coef_")
-            ):
+            if feature_step is not None and classifier is not None and hasattr(classifier, "coef_"):
                 tfidf = feature_step.named_transformers_.get("tfidf", None)
 
                 if tfidf is not None:
@@ -354,65 +213,35 @@ def explain_prediction(model, text, top_n=12):
                         word = feature_names[idx]
                         coef = float(classifier.coef_[0][idx])
 
-                        direction = (
-                            "AI influence"
-                            if coef > 0
-                            else "Human influence"
-                        )
-
                         scores.append({
                             "Feature": word,
                             "Influence": round(coef, 4),
-                            "Explanation": direction
+                            "Explanation": "Pushes toward AI" if coef > 0 else "Pushes toward Human"
                         })
 
-                    scores = sorted(
-                        scores,
-                        key=lambda x: abs(x["Influence"]),
-                        reverse=True
-                    )
-
+                    scores = sorted(scores, key=lambda x: abs(x["Influence"]), reverse=True)
                     return pd.DataFrame(scores[:top_n])
 
     except Exception:
         pass
 
-    # Fallback explanation for models like trees/MLPs that may not expose coefficients.
     common_words = pd.Series(words).value_counts().head(top_n)
 
     return pd.DataFrame({
         "Feature": common_words.index,
         "Influence": common_words.values,
-        "Explanation": "Most frequent cleaned words"
+        "Explanation": "Frequent cleaned word used as fallback explanation"
     })
 
 
-# ============================================================
-# Report Generation
-# ============================================================
-
-def create_report(
-    text,
-    run_mode,
-    prediction,
-    confidence,
-    stats,
-    results_df,
-    explanation_df
-):
-    """
-    Create a plain-text report.
-    This report is used for both TXT download and PDF generation.
-    """
+def create_report(text, run_mode, prediction, confidence, stats, results_df, explanation_df):
     report = []
-
     report.append("AI vs Human Text Detection Report")
     report.append("=" * 45)
     report.append("")
     report.append(f"Run Mode: {run_mode}")
     report.append(f"Final Prediction: {prediction}")
     report.append(f"Confidence: {confidence:.2%}")
-
     report.append("")
     report.append("Text Statistics")
     report.append("-" * 45)
@@ -440,17 +269,9 @@ def create_report(
 
 
 def create_pdf_report(report_text):
-    """
-    Create a PDF report from report text.
-
-    This version prevents the FPDF error:
-    'Not enough horizontal space to render a single character'
-    by cleaning unsupported characters and splitting long lines.
-    """
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-
     pdf.set_left_margin(12)
     pdf.set_right_margin(12)
     pdf.set_font("Arial", size=9)
@@ -459,16 +280,10 @@ def create_pdf_report(report_text):
 
     def clean_pdf_text(value):
         value = str(value)
-        value = value.replace("–", "-")
-        value = value.replace("—", "-")
-        value = value.replace("“", '"')
-        value = value.replace("”", '"')
-        value = value.replace("’", "'")
-        value = value.replace("•", "-")
-
-        # FPDF default fonts support latin-1 only.
+        value = value.replace("–", "-").replace("—", "-")
+        value = value.replace("“", '"').replace("”", '"')
+        value = value.replace("’", "'").replace("•", "-")
         value = value.encode("latin-1", "ignore").decode("latin-1")
-
         return value
 
     for line in report_text.split("\n"):
@@ -478,26 +293,19 @@ def create_pdf_report(report_text):
             pdf.ln(4)
             continue
 
-        # Split long lines to avoid rendering errors in FPDF.
-        chunks = [
-            safe_line[i:i + 95]
-            for i in range(0, len(safe_line), 95)
-        ]
-
-        for chunk in chunks:
+        for chunk in [safe_line[i:i + 90] for i in range(0, len(safe_line), 90)]:
             pdf.multi_cell(page_width, 5, chunk)
 
-    pdf_bytes = pdf.output(dest="S")
+    pdf_output = pdf.output(dest="S")
 
-    if isinstance(pdf_bytes, str):
-        pdf_bytes = pdf_bytes.encode("latin-1")
+    if isinstance(pdf_output, bytearray):
+        return bytes(pdf_output)
 
-    return pdf_bytes
+    if isinstance(pdf_output, str):
+        return pdf_output.encode("latin-1")
 
+    return pdf_output
 
-# ============================================================
-# 1. Analysis Setup
-# ============================================================
 
 st.markdown("## 1. Analysis Setup")
 
@@ -523,10 +331,6 @@ with setup_col3:
     )
 
 
-# ============================================================
-# 2. Text Input
-# ============================================================
-
 st.markdown("## 2. Text Input")
 
 text_input = ""
@@ -549,10 +353,8 @@ else:
 
         if file_name.endswith(".pdf"):
             text_input = extract_pdf_text(uploaded_file)
-
         elif file_name.endswith(".docx"):
             text_input = extract_docx_text(uploaded_file)
-
         elif file_name.endswith(".txt"):
             text_input = extract_txt_text(uploaded_file)
 
@@ -575,52 +377,33 @@ if not text_input.strip():
     st.stop()
 
 
-# ============================================================
-# 3. Prediction Results
-# ============================================================
-
 st.markdown("## 3. Prediction Results")
 
 if run_mode == "Run one selected model":
     selected_model = models[selected_model_name]
+    prediction, confidence = predict_with_model(selected_model, text_input)
 
-    prediction, confidence = predict_with_model(
-        selected_model,
-        text_input
-    )
-
-    strength, interpretation = get_interpretation(
-        prediction,
-        confidence
-    )
+    strength = get_strength(confidence)
+    reason = get_model_reason(selected_model_name, prediction, confidence)
 
     results_df = pd.DataFrame([{
         "Model": selected_model_name,
         "Prediction": prediction,
         "Confidence": f"{confidence:.1%}",
         "Strength": strength,
-        "Interpretation": interpretation
+        "Why": reason
     }])
 
     c1, c2, c3, c4 = st.columns(4)
-
     c1.metric("Model", selected_model_name)
     c2.metric("Prediction", prediction)
     c3.metric("Confidence", f"{confidence:.1%}")
     c4.metric("Strength", strength)
 
     if prediction == "AI-written":
-        st.warning(
-            f"The selected model predicts this text is **AI-written** "
-            f"with **{confidence:.1%} confidence**."
-        )
-
+        st.warning(f"The selected model predicts this text is **AI-written** with **{confidence:.1%} confidence**.")
     elif prediction == "Human-written":
-        st.success(
-            f"The selected model predicts this text is **Human-written** "
-            f"with **{confidence:.1%} confidence**."
-        )
-
+        st.success(f"The selected model predicts this text is **Human-written** with **{confidence:.1%} confidence**.")
     else:
         st.error(prediction)
 
@@ -630,18 +413,13 @@ else:
     for name, model in models.items():
         pred_label, pred_conf = predict_with_model(model, text_input)
 
-        strength, interpretation = get_interpretation(
-            pred_label,
-            pred_conf
-        )
-
         comparison_results.append({
             "Model": name,
             "Prediction": pred_label,
             "Confidence_Value": pred_conf,
             "Confidence": f"{pred_conf:.1%}",
-            "Strength": strength,
-            "Interpretation": interpretation
+            "Strength": get_strength(pred_conf),
+            "Why": get_model_reason(name, pred_label, pred_conf)
         })
 
     raw_results_df = pd.DataFrame(comparison_results)
@@ -655,32 +433,18 @@ else:
 
     if ai_votes > human_votes:
         prediction = "AI-written"
-
     elif human_votes > ai_votes:
         prediction = "Human-written"
-
     else:
         prediction = "Tie / Mixed"
 
     confidence = raw_results_df["Confidence_Value"].mean()
 
     summary_df = pd.DataFrame([
-        {
-            "Score": "Final Prediction",
-            "Result": prediction
-        },
-        {
-            "Score": "AI Votes",
-            "Result": f"{ai_votes}/{total_votes} ({ai_percent:.1%})"
-        },
-        {
-            "Score": "Human Votes",
-            "Result": f"{human_votes}/{total_votes} ({human_percent:.1%})"
-        },
-        {
-            "Score": "Average Confidence",
-            "Result": f"{confidence:.1%}"
-        },
+        {"Score": "Final Prediction", "Result": prediction},
+        {"Score": "AI Votes", "Result": f"{ai_votes}/{total_votes} ({ai_percent:.1%})"},
+        {"Score": "Human Votes", "Result": f"{human_votes}/{total_votes} ({human_percent:.1%})"},
+        {"Score": "Average Confidence", "Result": f"{confidence:.1%}"},
     ])
 
     st.subheader("Scoring Summary")
@@ -688,85 +452,32 @@ else:
 
     if ai_percent >= 0.80:
         st.error(f"Strong AI consensus: {ai_percent:.0%} of models agree.")
-
     elif human_percent >= 0.80:
         st.success(f"Strong human consensus: {human_percent:.0%} of models agree.")
-
     else:
         st.warning("Mixed results. The models do not strongly agree.")
 
     results_df = raw_results_df[
-        ["Model", "Prediction", "Confidence", "Strength", "Interpretation"]
+        ["Model", "Prediction", "Confidence", "Strength", "Why"]
     ]
 
 
-# ============================================================
-# 4. Model Comparison
-# ============================================================
+st.markdown("## 4. Model Comparison Table")
 
-st.markdown("## 4. Model Comparison")
-
-if run_mode == "Run all models":
-    st.write("Side-by-side comparison of all available models:")
-
-    model_cols = st.columns(3)
-
-    for i, row in results_df.iterrows():
-        with model_cols[i % 3]:
-
-            if row["Prediction"] == "AI-written":
-                badge = "🤖 AI-written"
-
-            elif row["Prediction"] == "Human-written":
-                badge = "👤 Human-written"
-
-            else:
-                badge = "⚠️ Error / Mixed"
-
-            st.markdown(
-                f"""
-                <div class="result-card">
-                    <h4>{row['Model']}</h4>
-                    <p style="font-size:18px;"><strong>{badge}</strong></p>
-                    <p><strong>Confidence:</strong> {row['Confidence']}</p>
-                    <p><strong>Strength:</strong> {row['Strength']}</p>
-                    <p style="font-size:14px;">{row['Interpretation']}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-else:
-    st.write("Single selected model result:")
+st.write("Detailed model results with confidence and explanation:")
 
 st.dataframe(results_df, width="stretch")
 
-
-# ============================================================
-# 5. Text Statistics
-# ============================================================
 
 st.markdown("## 5. Text Statistics")
 
 stats = get_text_statistics(text_input)
 
 stats_df = pd.DataFrame([
-    {
-        "Metric": "Word Count",
-        "Value": stats["Word Count"]
-    },
-    {
-        "Metric": "Sentence Count",
-        "Value": stats["Sentence Count"]
-    },
-    {
-        "Metric": "Average Sentence Length",
-        "Value": stats["Average Sentence Length"]
-    },
-    {
-        "Metric": "Vocabulary Richness",
-        "Value": stats["Vocabulary Richness"]
-    },
+    {"Metric": "Word Count", "Value": stats["Word Count"]},
+    {"Metric": "Sentence Count", "Value": stats["Sentence Count"]},
+    {"Metric": "Average Sentence Length", "Value": stats["Average Sentence Length"]},
+    {"Metric": "Vocabulary Richness", "Value": stats["Vocabulary Richness"]},
 ])
 
 st.table(stats_df)
@@ -781,10 +492,6 @@ if stats["Sentence Lengths"]:
     st.bar_chart(sentence_df.set_index("Sentence"))
 
 
-# ============================================================
-# 6. Feature Explanation
-# ============================================================
-
 st.markdown("## 6. Feature Explanation")
 
 explanation_model = models[selected_model_name]
@@ -792,17 +499,11 @@ explanation_df = explain_prediction(explanation_model, text_input)
 
 st.write(
     f"Feature explanation for **{selected_model_name}**. "
-    "Positive influence values lean toward AI-written text; negative values lean "
-    "toward human-written text when available. For models without direct "
-    "coefficients, the app displays the most frequent cleaned words."
+    "Positive values lean toward AI-written text; negative values lean toward human-written text when available."
 )
 
 st.dataframe(explanation_df, width="stretch")
 
-
-# ============================================================
-# 7. Report Download
-# ============================================================
 
 st.markdown("## 7. Report Download")
 
@@ -818,9 +519,9 @@ report_text = create_report(
 
 pdf_bytes = create_pdf_report(report_text)
 
-download_col1, download_col2 = st.columns(2)
+col1, col2 = st.columns(2)
 
-with download_col1:
+with col1:
     st.download_button(
         label="📄 Download TXT Report",
         data=report_text,
@@ -828,7 +529,7 @@ with download_col1:
         mime="text/plain"
     )
 
-with download_col2:
+with col2:
     st.download_button(
         label="📑 Download PDF Report",
         data=pdf_bytes,
@@ -837,12 +538,7 @@ with download_col2:
     )
 
 
-# ============================================================
-# Footer
-# ============================================================
-
 st.caption(
     "Project 1 Streamlit App: text/file input, single-model or all-model analysis, "
-    "prediction, model comparison, feature explanation, text statistics, and "
-    "downloadable TXT/PDF report."
+    "prediction, model comparison, feature explanation, text statistics, and downloadable TXT/PDF report."
 )
