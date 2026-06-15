@@ -1,11 +1,7 @@
+streamlit
 pandas
 numpy
-matplotlib
 scikit-learn
-nltk
-gensim
-tensorflow
-openpyxl
 joblib
-streamlit
-jupyter
+PyPDF2
+python-docx
