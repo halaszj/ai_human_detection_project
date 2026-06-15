@@ -40,12 +40,11 @@ from text_utils import clean_text, LinguisticFeatureExtractor
 # ============================================================
 
 st.set_page_config(
-    page_title="AI vs Human Text Detector",
-    page_icon="🧠",
+    page_title="Project 1 - AI vs Human Text Detector",
     layout="wide"
 )
 
-st.markdown("# 🧠 AI vs Human Text Detection App")
+st.markdown("# Project 1 - AI vs Human Text Detection App")
 st.write("Upload or paste text to classify it as human-written or AI-generated.")
 
 
