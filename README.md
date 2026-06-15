@@ -19,14 +19,11 @@ Your folder should look like this:
 AI-vs-Human-Text-Detection/
 │
 ├── app.py
-├── Project1_AI_vs_Human_Text_Detection(1).ipynb
+├── Project1_AI_vs_Human_Text_Detection.ipynb
 ├── README.md
 ├── requirements.txt
 ├── text_utils.py
 ├── train_app_models.py
-├── train_best_model.py
-├── model_comparison_results.csv
-├── best_ai_text_detector.pkl
 ├── all_models.pkl
 ├── train_data with labels.xlsx
 │
@@ -39,7 +36,7 @@ AI-vs-Human-Text-Detection/
     └── cnn_for_text.pkl
 ```
 
-> Important: `app.py` expects the individual model `.pkl` files to be inside the `models/` folder. It also uses `best_ai_text_detector.pkl` from the main project folder for the main prediction.
+> Important: `app.py` expects the individual model `.pkl` files to be inside the `models/` folder. 
 
 If your Excel file has a different name, such as `train_data with labels(4).xlsx` or `train_data with labels(3)(1).xlsx`, rename it to:
 
@@ -105,7 +102,7 @@ Paste text into the box and click **Analyze Text**. The app will display whether
 Use this when you want to reproduce the full assignment, including data exploration, preprocessing, feature engineering, model training, tuning, evaluation charts, confusion matrices, and written analysis.
 
 ```bash
-jupyter notebook Project1_AI_vs_Human_Text_Detection(1).ipynb
+jupyter notebook Project1_AI_vs_Human_Text_Detection.ipynb
 ```
 
 Then run the notebook from top to bottom.
@@ -118,32 +115,6 @@ The notebook covers:
 4. Evaluation & Comparison  
 5. Written Analysis  
 6. Saving the best deployable model  
-
----
-
-## How to Retrain the Best App Model
-
-The easiest way to recreate the deployable SVM model is:
-
-```bash
-python train_best_model.py
-```
-
-This creates:
-
-```text
-best_ai_text_detector.pkl
-```
-
-That file is used by the Streamlit app for the main prediction.
-
-> Note: In the uploaded version, `train_best_model.py` references `train_data with labels(3).xlsx`. If your dataset is named differently, either rename your Excel file to match that name or update the filename inside `train_best_model.py`.
-
-Recommended line to use inside `train_best_model.py`:
-
-```python
-df = pd.read_excel('train_data with labels.xlsx')
-```
 
 ---
 
@@ -181,7 +152,7 @@ models/model_metrics.csv
 | File/Folder | Purpose |
 |---|---|
 | `app.py` | Streamlit web app used to classify text as Human-written or AI-written. |
-| `Project1_AI_vs_Human_Text_Detection(1).ipynb` | Main Jupyter Notebook with exploration, preprocessing, feature engineering, model training, tuning, and evaluation. |
+| `Project1_AI_vs_Human_Text_Detection.ipynb` | Main Jupyter Notebook with exploration, preprocessing, feature engineering, model training, tuning, and evaluation. |
 | `requirements.txt` | Python packages needed to run the notebook and app. |
 | `text_utils.py` | Shared text-cleaning and linguistic-feature extraction helper code. |
 | `train_best_model.py` | Trains the best deployable SVM model and saves `best_ai_text_detector.pkl`. |
@@ -210,18 +181,6 @@ The strongest model in the saved results was the **SVM using TF-IDF + Linguistic
 ---
 
 ## Common Errors and Fixes
-
-### `FileNotFoundError: best_ai_text_detector.pkl`
-
-Run:
-
-```bash
-python train_best_model.py
-```
-
-Or make sure `best_ai_text_detector.pkl` is in the same folder as `app.py`.
-
----
 
 ### `FileNotFoundError: models/svm.pkl`
 
