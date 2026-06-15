@@ -12,7 +12,7 @@ from text_utils import clean_text, LinguisticFeatureExtractor
 # Page setup
 # =========================
 st.set_page_config(
-    page_title="AI vs Human Text Detector",
+    page_title="Project 1 - AI vs Human Text Detector",
     layout="wide"
 )
 
@@ -41,7 +41,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.markdown('<div class="main-title">🧠 AI vs Human Text Detection App</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">Project 1 - AI vs Human Text Detection App</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="subtitle">Upload a document or paste text to predict whether it appears human-written or AI-generated.</div>',
     unsafe_allow_html=True
