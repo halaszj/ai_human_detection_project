@@ -7,24 +7,25 @@ import streamlit as st
 
 from text_utils import clean_text, LinguisticFeatureExtractor
 
-try:
-    import PyPDF2
-except ImportError:
-    PyPDF2 = None
 
-try:
-    import docx
-except ImportError:
-    docx = None
-
-
+# =========================
+# Page setup
+# =========================
 st.set_page_config(
     page_title="AI vs Human Text Detector",
     page_icon="🤖",
     layout="wide"
 )
 
+st.title("AI vs Human Text Detection App")
+st.write(
+    "Upload a document or paste text below. The app predicts whether the writing appears human-written or AI-generated."
+)
 
+
+# =========================
+# Model loading
+# =========================
 MODEL_FILES = {
     "SVM": "models/svm.pkl",
     "Decision Tree": "models/decision_tree.pkl",
@@ -35,9 +36,9 @@ MODEL_FILES = {
 }
 
 
+@st.cache_resource
 def load_models():
     models = {}
-
     missing = []
 
     for name, path in MODEL_FILES.items():
@@ -49,29 +50,69 @@ def load_models():
     return models, missing
 
 
+models, missing_models = load_models()
+
+if not models:
+    st.error("No trained models were found in the models folder.")
+    st.write("Expected files:")
+    for path in MODEL_FILES.values():
+        st.code(path)
+    st.stop()
+
+if missing_models:
+    with st.expander("Some model files are missing"):
+        for path in missing_models:
+            st.write(path)
+
+
+# =========================
+# File extraction helpers
+# =========================
 def extract_pdf_text(uploaded_file):
-    if PyPDF2 is None:
-        return ""
+    try:
+        import PyPDF2
 
-    reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
+        reader = PyPDF2.PdfReader(uploaded_file)
+        text = ""
 
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text += page_text + "\n"
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
 
-    return text.strip()
+        return text.strip()
+
+    except Exception as e:
+        return f"PDF extraction error: {e}"
 
 
 def extract_docx_text(uploaded_file):
-    if docx is None:
-        return ""
+    try:
+        import docx
 
-    document = docx.Document(uploaded_file)
-    return "\n".join([p.text for p in document.paragraphs]).strip()
+        document = docx.Document(uploaded_file)
+        paragraphs = []
+
+        for paragraph in document.paragraphs:
+            if paragraph.text.strip():
+                paragraphs.append(paragraph.text.strip())
+
+        return "\n".join(paragraphs).strip()
+
+    except Exception as e:
+        return f"DOCX extraction error: {e}"
 
 
+def extract_txt_text(uploaded_file):
+    try:
+        return uploaded_file.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        return f"TXT extraction error: {e}"
+
+
+# =========================
+# Text statistics
+# =========================
 def get_text_statistics(text):
     words = text.split()
     sentences = re.split(r"[.!?]+", text)
@@ -95,6 +136,9 @@ def get_text_statistics(text):
     }
 
 
+# =========================
+# Prediction helpers
+# =========================
 def make_model_input(text):
     return pd.DataFrame({
         "text": [text],
@@ -136,7 +180,11 @@ def explain_prediction(model, text, top_n=10):
             feature_step = model.named_steps.get("features", None)
             classifier = model.named_steps.get("classifier", None)
 
-            if feature_step is not None and classifier is not None and hasattr(classifier, "coef_"):
+            if (
+                feature_step is not None
+                and classifier is not None
+                and hasattr(classifier, "coef_")
+            ):
                 tfidf = feature_step.named_transformers_.get("tfidf", None)
 
                 if tfidf is not None:
@@ -152,12 +200,16 @@ def explain_prediction(model, text, top_n=10):
                         scores.append((word, float(coef)))
 
                     scores = sorted(scores, key=lambda x: abs(x[1]), reverse=True)
-                    return pd.DataFrame(scores[:top_n], columns=["Feature / Word", "Influence"])
+                    return pd.DataFrame(
+                        scores[:top_n],
+                        columns=["Feature / Word", "Influence"]
+                    )
 
     except Exception:
         pass
 
     common_words = pd.Series(words).value_counts().head(top_n)
+
     return pd.DataFrame({
         "Feature / Word": common_words.index,
         "Influence": common_words.values
@@ -187,32 +239,14 @@ def create_report(text, selected_model, prediction, confidence, stats, compariso
     report.append("")
     report.append("Input Text Preview")
     report.append("-" * 45)
-    report.append(text[:2000])
+    report.append(text[:3000])
 
     return "\n".join(report)
 
 
-st.title("AI vs Human Text Detection App")
-
-st.write(
-    "Upload a document or paste text below. The app predicts whether the writing appears human-written or AI-generated."
-)
-
-models, missing_models = load_models()
-
-if not models:
-    st.error("No trained model files were found in the models folder.")
-    st.write("Expected files:")
-    for path in MODEL_FILES.values():
-        st.code(path)
-    st.stop()
-
-if missing_models:
-    with st.expander("Some model files are missing"):
-        for path in missing_models:
-            st.write(path)
-
-
+# =========================
+# User input
+# =========================
 st.sidebar.header("Input Options")
 
 input_method = st.sidebar.radio(
@@ -225,9 +259,10 @@ text_input = ""
 if input_method == "Type or paste text":
     text_input = st.text_area(
         "Enter text to analyze:",
-        height=250,
-        placeholder="Paste text here..."
+        height=300,
+        placeholder="Paste or type text here..."
     )
+
 else:
     uploaded_file = st.file_uploader(
         "Upload a PDF, DOCX, or TXT file",
@@ -239,12 +274,26 @@ else:
 
         if file_name.endswith(".pdf"):
             text_input = extract_pdf_text(uploaded_file)
+
         elif file_name.endswith(".docx"):
             text_input = extract_docx_text(uploaded_file)
-        elif file_name.endswith(".txt"):
-            text_input = uploaded_file.read().decode("utf-8", errors="ignore")
 
-        st.text_area("Extracted text", text_input, height=250)
+        elif file_name.endswith(".txt"):
+            text_input = extract_txt_text(uploaded_file)
+
+        st.subheader("Extracted Text Preview")
+        st.text_area("Extracted text", text_input, height=300)
+
+        if "extraction error" in text_input.lower():
+            st.error(text_input)
+            st.stop()
+
+        if not text_input.strip():
+            st.error(
+                "No text could be extracted from this file. "
+                "If this is a scanned PDF, try a DOCX or TXT file instead."
+            )
+            st.stop()
 
 
 if not text_input.strip():
@@ -252,6 +301,9 @@ if not text_input.strip():
     st.stop()
 
 
+# =========================
+# Model selector
+# =========================
 st.sidebar.header("Model Options")
 
 selected_model_name = st.sidebar.selectbox(
@@ -262,6 +314,9 @@ selected_model_name = st.sidebar.selectbox(
 selected_model = models[selected_model_name]
 
 
+# =========================
+# Prediction display
+# =========================
 st.header("Prediction Display")
 
 prediction, confidence = predict_with_model(selected_model, text_input)
@@ -275,6 +330,9 @@ with col2:
     st.metric("Confidence", f"{confidence:.2%}")
 
 
+# =========================
+# Text statistics
+# =========================
 st.header("Text Statistics")
 
 stats = get_text_statistics(text_input)
@@ -296,6 +354,9 @@ if stats["Sentence Lengths"]:
     st.bar_chart(sentence_df.set_index("Sentence"))
 
 
+# =========================
+# Explanation section
+# =========================
 st.header("Explanation Section")
 
 st.write(
@@ -307,6 +368,9 @@ explanation_df = explain_prediction(selected_model, text_input)
 st.dataframe(explanation_df, use_container_width=True)
 
 
+# =========================
+# Model comparison
+# =========================
 st.header("Model Comparison View")
 
 comparison_results = []
@@ -325,6 +389,9 @@ comparison_df = pd.DataFrame(comparison_results)
 st.dataframe(comparison_df, use_container_width=True)
 
 
+# =========================
+# Report download
+# =========================
 st.header("Report Download")
 
 report_text = create_report(
@@ -343,6 +410,7 @@ st.download_button(
     mime="text/plain"
 )
 
+
 st.caption(
-    "Project 1 Streamlit App: supports text/file input, model selection, prediction display, explanation, text statistics, model comparison, and report download."
+    "Project 1 Streamlit App: text/file input, model selector, prediction, explanation, text statistics, model comparison, and report download."
 )
