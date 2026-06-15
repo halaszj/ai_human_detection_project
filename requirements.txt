@@ -10,3 +10,4 @@ openpyxl
 matplotlib
 nltk
 fpdf2
+reportlab
