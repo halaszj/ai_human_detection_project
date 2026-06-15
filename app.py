@@ -325,18 +325,43 @@ selected_model = models[selected_model_name]
 st.header("Prediction Display")
 
 if run_mode == "Run one selected model":
-    prediction, confidence = predict_with_model(selected_model, text_input)
+
+    prediction, confidence = predict_with_model(
+        selected_model,
+        text_input
+    )
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Selected Model", selected_model_name)
+        st.metric(
+            "Model",
+            selected_model_name
+        )
 
     with col2:
-        st.metric("Prediction", prediction)
+        st.metric(
+            "Prediction",
+            prediction
+        )
 
     with col3:
-        st.metric("Confidence", f"{confidence:.2%}")
+        st.metric(
+            "Confidence",
+            f"{confidence:.2%}"
+        )
+
+    # Friendly result banner
+    if prediction == "AI-written":
+        st.warning(
+            f"The **{selected_model_name}** model predicts this text is "
+            f"**AI-generated** with {confidence:.2%} confidence."
+        )
+    else:
+        st.success(
+            f"The **{selected_model_name}** model predicts this text is "
+            f"**Human-written** with {confidence:.2%} confidence."
+        )
 
     comparison_results = [{
         "Model": selected_model_name,
