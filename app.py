@@ -302,9 +302,14 @@ if not text_input.strip():
 
 
 # =========================
-# Model selector
+# Model selector / run mode
 # =========================
 st.sidebar.header("Model Options")
+
+run_mode = st.sidebar.radio(
+    "Choose analysis mode:",
+    ["Run one selected model", "Run all models"]
+)
 
 selected_model_name = st.sidebar.selectbox(
     "Choose model:",
@@ -319,15 +324,75 @@ selected_model = models[selected_model_name]
 # =========================
 st.header("Prediction Display")
 
-prediction, confidence = predict_with_model(selected_model, text_input)
+if run_mode == "Run one selected model":
+    prediction, confidence = predict_with_model(selected_model, text_input)
 
-col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric("Prediction", prediction)
+    with col1:
+        st.metric("Selected Model", selected_model_name)
 
-with col2:
-    st.metric("Confidence", f"{confidence:.2%}")
+    with col2:
+        st.metric("Prediction", prediction)
+
+    with col3:
+        st.metric("Confidence", f"{confidence:.2%}")
+
+    comparison_results = [{
+        "Model": selected_model_name,
+        "Prediction": prediction,
+        "Confidence": round(confidence, 4)
+    }]
+
+else:
+    comparison_results = []
+
+    for name, model in models.items():
+        pred_label, pred_conf = predict_with_model(model, text_input)
+
+        comparison_results.append({
+            "Model": name,
+            "Prediction": pred_label,
+            "Confidence": round(pred_conf, 4)
+        })
+
+    comparison_df_preview = pd.DataFrame(comparison_results)
+
+    st.dataframe(comparison_df_preview, use_container_width=True)
+
+    # Majority vote summary
+    ai_votes = sum(
+        1 for r in comparison_results
+        if r["Prediction"] == "AI-written"
+    )
+
+    human_votes = sum(
+        1 for r in comparison_results
+        if r["Prediction"] == "Human-written"
+    )
+
+    final_prediction = (
+        "AI-written" if ai_votes > human_votes else "Human-written"
+    )
+
+    avg_confidence = np.mean([
+        r["Confidence"] for r in comparison_results
+        if isinstance(r["Confidence"], (float, int))
+    ])
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Final Vote", final_prediction)
+
+    with col2:
+        st.metric("AI Votes", ai_votes)
+
+    with col3:
+        st.metric("Average Confidence", f"{avg_confidence:.2%}")
+
+    prediction = final_prediction
+    confidence = avg_confidence
 
 
 # =========================
@@ -359,13 +424,31 @@ if stats["Sentence Lengths"]:
 # =========================
 st.header("Explanation Section")
 
-st.write(
-    "This section shows the strongest available words/features for the selected model. "
-    "For models that do not expose feature weights, it shows the most frequent cleaned words."
-)
+if run_mode == "Run one selected model":
+    st.write(
+        f"Explanation for **{selected_model_name}**. "
+        "This shows the strongest available words/features for the selected model."
+    )
 
-explanation_df = explain_prediction(selected_model, text_input)
-st.dataframe(explanation_df, use_container_width=True)
+    explanation_df = explain_prediction(selected_model, text_input)
+    st.dataframe(explanation_df, use_container_width=True)
+
+else:
+    st.write(
+        "Running all models. Explanations are shown for the selected model below."
+    )
+
+    explanation_model_name = st.selectbox(
+        "Choose a model explanation to view:",
+        list(models.keys())
+    )
+
+    explanation_df = explain_prediction(
+        models[explanation_model_name],
+        text_input
+    )
+
+    st.dataframe(explanation_df, use_container_width=True)
 
 
 # =========================
@@ -373,18 +456,12 @@ st.dataframe(explanation_df, use_container_width=True)
 # =========================
 st.header("Model Comparison View")
 
-comparison_results = []
-
-for name, model in models.items():
-    pred_label, pred_conf = predict_with_model(model, text_input)
-
-    comparison_results.append({
-        "Model": name,
-        "Prediction": pred_label,
-        "Confidence": round(pred_conf, 4)
-    })
-
 comparison_df = pd.DataFrame(comparison_results)
+
+if run_mode == "Run one selected model":
+    st.write("Only the selected model was run.")
+else:
+    st.write("All available models were run side-by-side.")
 
 st.dataframe(comparison_df, use_container_width=True)
 
@@ -396,7 +473,11 @@ st.header("Report Download")
 
 report_text = create_report(
     text=text_input,
-    selected_model=selected_model_name,
+    selected_model=(
+        selected_model_name
+        if run_mode == "Run one selected model"
+        else "All Models"
+    ),
     prediction=prediction,
     confidence=confidence,
     stats=stats,
@@ -412,5 +493,5 @@ st.download_button(
 
 
 st.caption(
-    "Project 1 Streamlit App: text/file input, model selector, prediction, explanation, text statistics, model comparison, and report download."
+    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, prediction, explanation, text statistics, comparison, and report download."
 )
