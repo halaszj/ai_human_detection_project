@@ -1,7 +1,12 @@
 streamlit
 pandas
 numpy
+scipy
 scikit-learn
 joblib
 PyPDF2
 python-docx
+openpyxl
+matplotlib
+nltk
+fpdf2
