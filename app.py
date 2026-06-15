@@ -18,8 +18,10 @@ st.set_page_config(
 )
 
 st.title("AI vs Human Text Detection App")
+
 st.write(
-    "Upload a document or paste text below. The app predicts whether the writing appears human-written or AI-generated."
+    "Upload a document or paste text below. The app predicts whether the writing "
+    "appears human-written or AI-generated."
 )
 
 
@@ -200,6 +202,7 @@ def explain_prediction(model, text, top_n=10):
                         scores.append((word, float(coef)))
 
                     scores = sorted(scores, key=lambda x: abs(x[1]), reverse=True)
+
                     return pd.DataFrame(
                         scores[:top_n],
                         columns=["Feature / Word", "Influence"]
@@ -216,11 +219,20 @@ def explain_prediction(model, text, top_n=10):
     })
 
 
-def create_report(text, selected_model, prediction, confidence, stats, comparison_df):
+def create_report(
+    text,
+    run_mode,
+    selected_model,
+    prediction,
+    confidence,
+    stats,
+    comparison_df
+):
     report = []
     report.append("AI vs Human Text Detection Report")
     report.append("=" * 45)
     report.append("")
+    report.append(f"Run Mode: {run_mode}")
     report.append(f"Selected Model: {selected_model}")
     report.append(f"Prediction: {prediction}")
     report.append(f"Confidence: {confidence:.2%}")
@@ -233,7 +245,7 @@ def create_report(text, selected_model, prediction, confidence, stats, compariso
             report.append(f"{key}: {value}")
 
     report.append("")
-    report.append("Model Comparison")
+    report.append("Model Results")
     report.append("-" * 45)
     report.append(comparison_df.to_string(index=False))
     report.append("")
@@ -245,7 +257,7 @@ def create_report(text, selected_model, prediction, confidence, stats, compariso
 
 
 # =========================
-# User input
+# Input section
 # =========================
 st.sidebar.header("Input Options")
 
@@ -302,7 +314,7 @@ if not text_input.strip():
 
 
 # =========================
-# Model selector / run mode
+# Model options
 # =========================
 st.sidebar.header("Model Options")
 
@@ -334,34 +346,26 @@ if run_mode == "Run one selected model":
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric(
-            "Model",
-            selected_model_name
-        )
+        st.metric("Model", selected_model_name)
 
     with col2:
-        st.metric(
-            "Prediction",
-            prediction
-        )
+        st.metric("Prediction", prediction)
 
     with col3:
-        st.metric(
-            "Confidence",
-            f"{confidence:.2%}"
-        )
+        st.metric("Confidence", f"{confidence:.2%}")
 
-    # Friendly result banner
     if prediction == "AI-written":
         st.warning(
             f"The **{selected_model_name}** model predicts this text is "
             f"**AI-generated** with {confidence:.2%} confidence."
         )
-    else:
+    elif prediction == "Human-written":
         st.success(
             f"The **{selected_model_name}** model predicts this text is "
             f"**Human-written** with {confidence:.2%} confidence."
         )
+    else:
+        st.error(prediction)
 
     comparison_results = [{
         "Model": selected_model_name,
@@ -381,43 +385,83 @@ else:
             "Confidence": round(pred_conf, 4)
         })
 
-    comparison_df_preview = pd.DataFrame(comparison_results)
+    ai_votes = sum(
+        1 for r in comparison_results
+        if r["Prediction"] == "AI-written"
+    )
 
-# Majority vote summary only
-ai_votes = sum(
-    1 for r in comparison_results
-    if r["Prediction"] == "AI-written"
-)
+    human_votes = sum(
+        1 for r in comparison_results
+        if r["Prediction"] == "Human-written"
+    )
 
-human_votes = sum(
-    1 for r in comparison_results
-    if r["Prediction"] == "Human-written"
-)
+    total_votes = ai_votes + human_votes
 
-final_prediction = (
-    "AI-written" if ai_votes > human_votes
-    else "Human-written"
-)
+    if ai_votes > human_votes:
+        final_prediction = "AI-written"
+    elif human_votes > ai_votes:
+        final_prediction = "Human-written"
+    else:
+        final_prediction = "Tie / Mixed"
 
-avg_confidence = np.mean([
-    r["Confidence"]
-    for r in comparison_results
-    if isinstance(r["Confidence"], (float, int))
-])
+    valid_confidences = [
+        r["Confidence"]
+        for r in comparison_results
+        if isinstance(r["Confidence"], (float, int))
+    ]
 
-col1, col2, col3 = st.columns(3)
+    avg_confidence = np.mean(valid_confidences) if valid_confidences else 0.0
 
-with col1:
-    st.metric("Final Vote", final_prediction)
+    ai_percent = (ai_votes / total_votes) * 100 if total_votes else 0
+    human_percent = (human_votes / total_votes) * 100 if total_votes else 0
 
-with col2:
-    st.metric("AI Votes", ai_votes)
+    st.subheader("Consensus Analysis")
 
-with col3:
-    st.metric("Average Confidence", f"{avg_confidence:.2%}")
+    col1, col2, col3, col4 = st.columns(4)
 
-prediction = final_prediction
-confidence = avg_confidence
+    with col1:
+        st.metric("Final Prediction", final_prediction)
+
+    with col2:
+        st.metric("AI Votes", f"{ai_votes}/{total_votes}")
+
+    with col3:
+        st.metric("Human Votes", f"{human_votes}/{total_votes}")
+
+    with col4:
+        st.metric("Average Confidence", f"{avg_confidence:.1%}")
+
+    st.write("### Model Agreement")
+
+    st.write(
+        f"🤖 AI-written: {ai_percent:.1f}% "
+        f"({ai_votes} of {total_votes} models)"
+    )
+    st.progress(ai_percent / 100)
+
+    st.write(
+        f"👤 Human-written: {human_percent:.1f}% "
+        f"({human_votes} of {total_votes} models)"
+    )
+    st.progress(human_percent / 100)
+
+    if ai_percent >= 80:
+        st.error(
+            f"Strong AI consensus: {ai_percent:.0f}% of models agree."
+        )
+
+    elif human_percent >= 80:
+        st.success(
+            f"Strong human consensus: {human_percent:.0f}% of models agree."
+        )
+
+    else:
+        st.warning(
+            "Mixed results. The models do not strongly agree."
+        )
+
+    prediction = final_prediction
+    confidence = avg_confidence
 
 
 # =========================
@@ -456,11 +500,10 @@ if run_mode == "Run one selected model":
     )
 
     explanation_df = explain_prediction(selected_model, text_input)
-    st.dataframe(explanation_df, use_container_width=True)
 
 else:
     st.write(
-        "Running all models. Explanations are shown for the selected model below."
+        "Running all models. Choose which model explanation to view below."
     )
 
     explanation_model_name = st.selectbox(
@@ -473,7 +516,7 @@ else:
         text_input
     )
 
-    st.dataframe(explanation_df, use_container_width=True)
+st.dataframe(explanation_df, width="stretch")
 
 
 # =========================
@@ -488,7 +531,7 @@ if run_mode == "Run one selected model":
 else:
     st.write("All available models were run side-by-side.")
 
-st.dataframe(comparison_df, use_container_width=True)
+st.dataframe(comparison_df, width="stretch")
 
 
 # =========================
@@ -498,6 +541,7 @@ st.header("Report Download")
 
 report_text = create_report(
     text=text_input,
+    run_mode=run_mode,
     selected_model=(
         selected_model_name
         if run_mode == "Run one selected model"
@@ -518,5 +562,6 @@ st.download_button(
 
 
 st.caption(
-    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, prediction, explanation, text statistics, comparison, and report download."
+    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, "
+    "prediction, explanation, text statistics, model comparison, and report download."
 )
