@@ -5,7 +5,18 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from fpdf import FPDF
+from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle
+)
+
 from text_utils import clean_text, LinguisticFeatureExtractor
 
 
@@ -268,43 +279,153 @@ def create_report(text, run_mode, prediction, confidence, stats, results_df, exp
     return "\n".join(report)
 
 
-def create_pdf_report(report_text):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_left_margin(12)
-    pdf.set_right_margin(12)
-    pdf.set_font("Arial", size=9)
+def create_pdf_report(
+    run_mode,
+    prediction,
+    confidence,
+    stats,
+    results_df,
+    explanation_df,
+    text
+):
+    """
+    Creates a clean, formatted PDF report.
+    Uses ReportLab instead of FPDF because ReportLab handles tables and wrapping better.
+    """
 
-    page_width = pdf.w - pdf.l_margin - pdf.r_margin
+    buffer = BytesIO()
 
-    def clean_pdf_text(value):
-        value = str(value)
-        value = value.replace("–", "-").replace("—", "-")
-        value = value.replace("“", '"').replace("”", '"')
-        value = value.replace("’", "'").replace("•", "-")
-        value = value.encode("latin-1", "ignore").decode("latin-1")
-        return value
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
 
-    for line in report_text.split("\n"):
-        safe_line = clean_pdf_text(line)
+    styles = getSampleStyleSheet()
+    story = []
 
-        if not safe_line.strip():
-            pdf.ln(4)
-            continue
+    title_style = styles["Title"]
+    heading_style = styles["Heading2"]
+    normal_style = styles["BodyText"]
 
-        for chunk in [safe_line[i:i + 90] for i in range(0, len(safe_line), 90)]:
-            pdf.multi_cell(page_width, 5, chunk)
+    story.append(Paragraph("AI vs Human Text Detection Report", title_style))
+    story.append(Spacer(1, 12))
 
-    pdf_output = pdf.output(dest="S")
+    story.append(Paragraph("Prediction Summary", heading_style))
 
-    if isinstance(pdf_output, bytearray):
-        return bytes(pdf_output)
+    summary_data = [
+        ["Run Mode", run_mode],
+        ["Final Prediction", prediction],
+        ["Confidence", f"{confidence:.2%}"],
+    ]
 
-    if isinstance(pdf_output, str):
-        return pdf_output.encode("latin-1")
+    summary_table = Table(summary_data, colWidths=[150, 330])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
 
-    return pdf_output
+    story.append(summary_table)
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("Text Statistics", heading_style))
+
+    stats_data = [["Metric", "Value"]]
+
+    for key, value in stats.items():
+        if key != "Sentence Lengths":
+            stats_data.append([key, str(value)])
+
+    stats_table = Table(stats_data, colWidths=[220, 260])
+    stats_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    story.append(stats_table)
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("Model Results", heading_style))
+
+    model_data = [["Model", "Prediction", "Confidence", "Strength"]]
+
+    for _, row in results_df.iterrows():
+        model_data.append([
+            str(row.get("Model", "")),
+            str(row.get("Prediction", "")),
+            str(row.get("Confidence", "")),
+            str(row.get("Strength", "")),
+        ])
+
+    model_table = Table(model_data, colWidths=[120, 120, 90, 100])
+    model_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    story.append(model_table)
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("Model Explanation", heading_style))
+
+    if "Why" in results_df.columns:
+        for _, row in results_df.iterrows():
+            story.append(Paragraph(f"<b>{row['Model']}:</b> {row['Why']}", normal_style))
+            story.append(Spacer(1, 6))
+
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("Feature Explanation", heading_style))
+
+    feature_data = [["Feature", "Influence", "Explanation"]]
+
+    for _, row in explanation_df.head(10).iterrows():
+        feature_data.append([
+            str(row.get("Feature", ""))[:35],
+            str(row.get("Influence", "")),
+            str(row.get("Explanation", ""))[:60],
+        ])
+
+    feature_table = Table(feature_data, colWidths=[150, 90, 240])
+    feature_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    story.append(feature_table)
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("Input Text Preview", heading_style))
+
+    preview = text[:1500].replace("\n", "<br/>")
+    story.append(Paragraph(preview, normal_style))
+
+    doc.build(story)
+
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    return pdf_bytes
 
 
 st.markdown("## 1. Analysis Setup")
@@ -517,7 +638,15 @@ report_text = create_report(
     explanation_df=explanation_df
 )
 
-pdf_bytes = create_pdf_report(report_text)
+pdf_bytes = create_pdf_report(
+    run_mode=run_mode,
+    prediction=prediction,
+    confidence=confidence,
+    stats=stats,
+    results_df=results_df,
+    explanation_df=explanation_df,
+    text=text_input
+)
 
 col1, col2 = st.columns(2)
 
