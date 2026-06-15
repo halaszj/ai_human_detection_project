@@ -13,7 +13,6 @@ from text_utils import clean_text, LinguisticFeatureExtractor
 # =========================
 st.set_page_config(
     page_title="AI vs Human Text Detector",
-    page_icon="🧠",
     layout="wide"
 )
 
