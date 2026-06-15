@@ -8,9 +8,6 @@ import streamlit as st
 from text_utils import clean_text, LinguisticFeatureExtractor
 
 
-# =========================
-# Page setup
-# =========================
 st.set_page_config(
     page_title="AI vs Human Text Detector",
     page_icon="🤖",
@@ -18,16 +15,9 @@ st.set_page_config(
 )
 
 st.title("AI vs Human Text Detection App")
-
-st.write(
-    "Upload a document or paste text below. The app predicts whether the writing "
-    "appears human-written or AI-generated."
-)
+st.write("Upload a document or paste text to predict whether it appears human-written or AI-generated.")
 
 
-# =========================
-# Model loading
-# =========================
 MODEL_FILES = {
     "SVM": "models/svm.pkl",
     "Decision Tree": "models/decision_tree.pkl",
@@ -56,20 +46,14 @@ models, missing_models = load_models()
 
 if not models:
     st.error("No trained models were found in the models folder.")
-    st.write("Expected files:")
-    for path in MODEL_FILES.values():
-        st.code(path)
     st.stop()
 
 if missing_models:
-    with st.expander("Some model files are missing"):
+    with st.expander("Missing model files"):
         for path in missing_models:
             st.write(path)
 
 
-# =========================
-# File extraction helpers
-# =========================
 def extract_pdf_text(uploaded_file):
     try:
         import PyPDF2
@@ -93,13 +77,13 @@ def extract_docx_text(uploaded_file):
         import docx
 
         document = docx.Document(uploaded_file)
-        paragraphs = []
+        paragraphs = [
+            paragraph.text.strip()
+            for paragraph in document.paragraphs
+            if paragraph.text.strip()
+        ]
 
-        for paragraph in document.paragraphs:
-            if paragraph.text.strip():
-                paragraphs.append(paragraph.text.strip())
-
-        return "\n".join(paragraphs).strip()
+        return "\n".join(paragraphs)
 
     except Exception as e:
         return f"DOCX extraction error: {e}"
@@ -112,9 +96,6 @@ def extract_txt_text(uploaded_file):
         return f"TXT extraction error: {e}"
 
 
-# =========================
-# Text statistics
-# =========================
 def get_text_statistics(text):
     words = text.split()
     sentences = re.split(r"[.!?]+", text)
@@ -126,7 +107,6 @@ def get_text_statistics(text):
 
     avg_sentence_length = word_count / sentence_count if sentence_count else 0
     vocab_richness = unique_words / word_count if word_count else 0
-
     sentence_lengths = [len(s.split()) for s in sentences]
 
     return {
@@ -138,9 +118,6 @@ def get_text_statistics(text):
     }
 
 
-# =========================
-# Prediction helpers
-# =========================
 def make_model_input(text):
     return pd.DataFrame({
         "text": [text],
@@ -182,11 +159,7 @@ def explain_prediction(model, text, top_n=10):
             feature_step = model.named_steps.get("features", None)
             classifier = model.named_steps.get("classifier", None)
 
-            if (
-                feature_step is not None
-                and classifier is not None
-                and hasattr(classifier, "coef_")
-            ):
+            if feature_step is not None and classifier is not None and hasattr(classifier, "coef_"):
                 tfidf = feature_step.named_transformers_.get("tfidf", None)
 
                 if tfidf is not None:
@@ -219,21 +192,12 @@ def explain_prediction(model, text, top_n=10):
     })
 
 
-def create_report(
-    text,
-    run_mode,
-    selected_model,
-    prediction,
-    confidence,
-    stats,
-    comparison_df
-):
+def create_report(text, run_mode, prediction, confidence, stats, results_df):
     report = []
     report.append("AI vs Human Text Detection Report")
     report.append("=" * 45)
     report.append("")
     report.append(f"Run Mode: {run_mode}")
-    report.append(f"Selected Model: {selected_model}")
     report.append(f"Prediction: {prediction}")
     report.append(f"Confidence: {confidence:.2%}")
     report.append("")
@@ -247,7 +211,7 @@ def create_report(
     report.append("")
     report.append("Model Results")
     report.append("-" * 45)
-    report.append(comparison_df.to_string(index=False))
+    report.append(results_df.to_string(index=False))
     report.append("")
     report.append("Input Text Preview")
     report.append("-" * 45)
@@ -256,9 +220,6 @@ def create_report(
     return "\n".join(report)
 
 
-# =========================
-# Input section
-# =========================
 st.sidebar.header("Input Options")
 
 input_method = st.sidebar.radio(
@@ -286,25 +247,20 @@ else:
 
         if file_name.endswith(".pdf"):
             text_input = extract_pdf_text(uploaded_file)
-
         elif file_name.endswith(".docx"):
             text_input = extract_docx_text(uploaded_file)
-
         elif file_name.endswith(".txt"):
             text_input = extract_txt_text(uploaded_file)
 
         st.subheader("Extracted Text Preview")
-        st.text_area("Extracted text", text_input, height=300)
+        st.text_area("Extracted text", text_input, height=250)
 
         if "extraction error" in text_input.lower():
             st.error(text_input)
             st.stop()
 
         if not text_input.strip():
-            st.error(
-                "No text could be extracted from this file. "
-                "If this is a scanned PDF, try a DOCX or TXT file instead."
-            )
+            st.error("No text could be extracted from this file.")
             st.stop()
 
 
@@ -313,9 +269,6 @@ if not text_input.strip():
     st.stop()
 
 
-# =========================
-# Model options
-# =========================
 st.sidebar.header("Model Options")
 
 run_mode = st.sidebar.radio(
@@ -328,50 +281,29 @@ selected_model_name = st.sidebar.selectbox(
     list(models.keys())
 )
 
-selected_model = models[selected_model_name]
 
-
-# =========================
-# Prediction display
-# =========================
-st.header("Prediction Display")
+st.header("Prediction Results")
 
 if run_mode == "Run one selected model":
+    selected_model = models[selected_model_name]
+    prediction, confidence = predict_with_model(selected_model, text_input)
 
-    prediction, confidence = predict_with_model(
-        selected_model,
-        text_input
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Model", selected_model_name)
-
-    with col2:
-        st.metric("Prediction", prediction)
-
-    with col3:
-        st.metric("Confidence", f"{confidence:.2%}")
+    results_df = pd.DataFrame([{
+        "Model": selected_model_name,
+        "Prediction": prediction,
+        "Confidence": f"{confidence:.1%}"
+    }])
 
     if prediction == "AI-written":
         st.warning(
-            f"The **{selected_model_name}** model predicts this text is "
-            f"**AI-generated** with {confidence:.2%} confidence."
+            f"The selected model predicts this text is **AI-written** with **{confidence:.1%} confidence**."
         )
     elif prediction == "Human-written":
         st.success(
-            f"The **{selected_model_name}** model predicts this text is "
-            f"**Human-written** with {confidence:.2%} confidence."
+            f"The selected model predicts this text is **Human-written** with **{confidence:.1%} confidence**."
         )
     else:
         st.error(prediction)
-
-    comparison_results = [{
-        "Model": selected_model_name,
-        "Prediction": prediction,
-        "Confidence": round(confidence, 4)
-    }]
 
 else:
     comparison_results = []
@@ -382,101 +314,76 @@ else:
         comparison_results.append({
             "Model": name,
             "Prediction": pred_label,
-            "Confidence": round(pred_conf, 4)
+            "Confidence_Value": pred_conf,
+            "Confidence": f"{pred_conf:.1%}"
         })
 
-    ai_votes = sum(
-        1 for r in comparison_results
-        if r["Prediction"] == "AI-written"
-    )
+    raw_results_df = pd.DataFrame(comparison_results)
 
-    human_votes = sum(
-        1 for r in comparison_results
-        if r["Prediction"] == "Human-written"
-    )
-
+    ai_votes = int((raw_results_df["Prediction"] == "AI-written").sum())
+    human_votes = int((raw_results_df["Prediction"] == "Human-written").sum())
     total_votes = ai_votes + human_votes
 
+    ai_percent = ai_votes / total_votes if total_votes else 0
+    human_percent = human_votes / total_votes if total_votes else 0
+
     if ai_votes > human_votes:
-        final_prediction = "AI-written"
+        prediction = "AI-written"
     elif human_votes > ai_votes:
-        final_prediction = "Human-written"
+        prediction = "Human-written"
     else:
-        final_prediction = "Tie / Mixed"
+        prediction = "Tie / Mixed"
 
-    valid_confidences = [
-        r["Confidence"]
-        for r in comparison_results
-        if isinstance(r["Confidence"], (float, int))
-    ]
+    confidence = raw_results_df["Confidence_Value"].mean()
 
-    avg_confidence = np.mean(valid_confidences) if valid_confidences else 0.0
+    summary_df = pd.DataFrame([
+        {
+            "Result": "Final Prediction",
+            "Value": prediction
+        },
+        {
+            "Result": "AI Votes",
+            "Value": f"{ai_votes}/{total_votes} ({ai_percent:.1%})"
+        },
+        {
+            "Result": "Human Votes",
+            "Value": f"{human_votes}/{total_votes} ({human_percent:.1%})"
+        },
+        {
+            "Result": "Average Confidence",
+            "Value": f"{confidence:.1%}"
+        }
+    ])
 
-    ai_percent = (ai_votes / total_votes) * 100 if total_votes else 0
-    human_percent = (human_votes / total_votes) * 100 if total_votes else 0
+    st.subheader("Scoring Summary")
+    st.table(summary_df)
 
-    st.subheader("Consensus Analysis")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Final Prediction", final_prediction)
-
-    with col2:
-        st.metric("AI Votes", f"{ai_votes}/{total_votes}")
-
-    with col3:
-        st.metric("Human Votes", f"{human_votes}/{total_votes}")
-
-    with col4:
-        st.metric("Average Confidence", f"{avg_confidence:.1%}")
-
-    st.write("### Model Agreement")
-
-    st.write(
-        f"🤖 AI-written: {ai_percent:.1f}% "
-        f"({ai_votes} of {total_votes} models)"
-    )
-    st.progress(ai_percent / 100)
-
-    st.write(
-        f"👤 Human-written: {human_percent:.1f}% "
-        f"({human_votes} of {total_votes} models)"
-    )
-    st.progress(human_percent / 100)
-
-    if ai_percent >= 80:
-        st.error(
-            f"Strong AI consensus: {ai_percent:.0f}% of models agree."
-        )
-
-    elif human_percent >= 80:
-        st.success(
-            f"Strong human consensus: {human_percent:.0f}% of models agree."
-        )
-
+    if ai_percent >= 0.80:
+        st.error(f"Strong AI consensus: {ai_percent:.0%} of models agree.")
+    elif human_percent >= 0.80:
+        st.success(f"Strong human consensus: {human_percent:.0%} of models agree.")
     else:
-        st.warning(
-            "Mixed results. The models do not strongly agree."
-        )
+        st.warning("Mixed results. The models do not strongly agree.")
 
-    prediction = final_prediction
-    confidence = avg_confidence
+    results_df = raw_results_df[["Model", "Prediction", "Confidence"]]
 
 
-# =========================
-# Text statistics
-# =========================
+st.subheader("Model Results")
+st.dataframe(results_df, width="stretch")
+
+
 st.header("Text Statistics")
 
 stats = get_text_statistics(text_input)
 
-c1, c2, c3, c4 = st.columns(4)
+stats_df = pd.DataFrame([
+    {"Metric": "Word Count", "Value": stats["Word Count"]},
+    {"Metric": "Sentence Count", "Value": stats["Sentence Count"]},
+    {"Metric": "Average Sentence Length", "Value": stats["Average Sentence Length"]},
+    {"Metric": "Vocabulary Richness", "Value": stats["Vocabulary Richness"]},
+])
 
-c1.metric("Word Count", stats["Word Count"])
-c2.metric("Sentence Count", stats["Sentence Count"])
-c3.metric("Avg Sentence Length", stats["Average Sentence Length"])
-c4.metric("Vocabulary Richness", stats["Vocabulary Richness"])
+st.table(stats_df)
 
 if stats["Sentence Lengths"]:
     sentence_df = pd.DataFrame({
@@ -488,69 +395,31 @@ if stats["Sentence Lengths"]:
     st.bar_chart(sentence_df.set_index("Sentence"))
 
 
-# =========================
-# Explanation section
-# =========================
 st.header("Explanation Section")
 
 if run_mode == "Run one selected model":
-    st.write(
-        f"Explanation for **{selected_model_name}**. "
-        "This shows the strongest available words/features for the selected model."
-    )
-
-    explanation_df = explain_prediction(selected_model, text_input)
-
+    explanation_model = models[selected_model_name]
+    st.write(f"Showing explanation for **{selected_model_name}**.")
 else:
+    explanation_model = models[selected_model_name]
     st.write(
-        "Running all models. Choose which model explanation to view below."
+        f"Showing explanation for the sidebar-selected model: **{selected_model_name}**. "
+        "For many models, this displays the most frequent cleaned words because direct feature weights are unavailable."
     )
 
-    explanation_model_name = st.selectbox(
-        "Choose a model explanation to view:",
-        list(models.keys())
-    )
-
-    explanation_df = explain_prediction(
-        models[explanation_model_name],
-        text_input
-    )
-
+explanation_df = explain_prediction(explanation_model, text_input)
 st.dataframe(explanation_df, width="stretch")
 
 
-# =========================
-# Model comparison
-# =========================
-st.header("Model Comparison View")
-
-comparison_df = pd.DataFrame(comparison_results)
-
-if run_mode == "Run one selected model":
-    st.write("Only the selected model was run.")
-else:
-    st.write("All available models were run side-by-side.")
-
-st.dataframe(comparison_df, width="stretch")
-
-
-# =========================
-# Report download
-# =========================
 st.header("Report Download")
 
 report_text = create_report(
     text=text_input,
     run_mode=run_mode,
-    selected_model=(
-        selected_model_name
-        if run_mode == "Run one selected model"
-        else "All Models"
-    ),
     prediction=prediction,
     confidence=confidence,
     stats=stats,
-    comparison_df=comparison_df
+    results_df=results_df
 )
 
 st.download_button(
@@ -560,8 +429,6 @@ st.download_button(
     mime="text/plain"
 )
 
-
 st.caption(
-    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, "
-    "prediction, explanation, text statistics, model comparison, and report download."
+    "Project 1 Streamlit App: text/file input, single-model or all-model analysis, prediction, explanation, statistics, model results, and report download."
 )
