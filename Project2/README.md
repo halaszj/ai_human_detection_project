@@ -1,8 +1,8 @@
 # AI vs. Human Text Detection
 
-### Public Hugging Face Spaces Deployment Link
 
-**Public Space Link:**
+** Public Hugging Face Spaces Deployment Link
+
 
 ```text
 https://huggingface.co/spaces/halaszj/AI_vs_Human
