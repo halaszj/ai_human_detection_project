@@ -1,7 +1,7 @@
 # AI vs. Human Text Detection
 
 
-** Public Hugging Face Spaces Deployment Link
+**Public Hugging Face Spaces Deployment Link
 
 
 ```text
