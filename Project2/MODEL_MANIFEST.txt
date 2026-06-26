@@ -1,0 +1,11 @@
+Verified model files included:
+- models/svm.pkl
+- models/decision_tree.pkl
+- models/adaboost.pkl
+- models/fnn.pkl
+- models/lstm.pkl
+- models/cnn_for_text.pkl
+
+Project 2 LLM integrations included in app.py:
+- LLM 1: google/flan-t5-small for explaining the prediction
+- LLM 2: TinyLlama/TinyLlama-1.1B-Chat-v1.0 for writing coaching and revision guidance
