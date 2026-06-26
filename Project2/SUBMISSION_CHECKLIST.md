@@ -1,7 +1,5 @@
 # Canvas Submission Checklist
 
-Before uploading the ZIP to Canvas, confirm the following:
-
 ## Required by Project 2
 
 - [ ] Source code for the complete working application is included.
