@@ -82,6 +82,7 @@ MODEL_FILES = {
 
 # Streamlit caches loaded models so repeated predictions do not reload the same pickle file.
 # Each model is loaded individually to reduce memory pressure on Hugging Face Spaces.
+
 @st.cache_resource(show_spinner=False)
 def load_one_model(name):
     """Load only the model selected/needed so the app stays lighter."""
@@ -232,7 +233,7 @@ def get_risk_level(prediction, confidence, agreement_ratio):
 
 def get_model_reason(model_name, prediction, confidence, error_message=""):
     if prediction == "Prediction error":
-        return f"This model could not complete prediction. {error_message}".strip()
+        return f"This model could not complete the prediction. {error_message}".strip()
     model_notes = {
         "SVM": "Compares high-dimensional TF-IDF vocabulary and linguistic patterns.",
         "Decision Tree": "Uses rule-based splits on engineered text and linguistic features.",
@@ -410,7 +411,7 @@ def call_huggingface_llm(model_id, prompt, max_new_tokens=220):
 def build_llm1_structured(prediction, confidence, stats, results_df, explanation_df):
     """Build structured tables for the AI Analyst section and reports.
 
-    This function proves the LLM is using machine learning context, not just
+    This function proves the LLM is using a machine learning context, not just
     reading the raw text. It combines the ensemble prediction, vote counts,
     confidence, document statistics, and feature evidence.
     """
@@ -582,7 +583,7 @@ def create_full_txt_report(
     revision_impact_df=None,
 ):
     lines = []
-    lines.append("AI DOCUMENT INTELLIGENCE REPORT")
+    lines.append("AI DOCUMENT INTEL REPORT")
     lines.append("=" * 70)
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"Run Mode: {run_mode}")
@@ -1098,7 +1099,7 @@ with coach_tab:
 
     if st.button("Refresh LLM 2 Writing Coach", use_container_width=True):
         prompt = (
-            "You are a writing coach in an AI-vs-human text detection application. "
+            "You are a writing coach in an AI vs. Human text detection application. "
             "Do not help anyone cheat or evade detection. Focus on improving clarity, specificity, support, and natural voice. "
             "Return four concise bullets and one short sample revision of the opening.\n\n"
             f"Detector prediction: {prediction}\n"
