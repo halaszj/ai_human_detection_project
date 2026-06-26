@@ -242,7 +242,6 @@ FINETUNED_COACH_MODEL=halaszj/ai-writing-coach-flan-t5
 5. Add `HF_TOKEN` as a Secret if hosted inference requires authentication.
 6. Restart the Space.
 7. Confirm the app shows the fine-tuned LLM status panel.
-8. Copy the public Space link into this README before Canvas submission.
 
 ---
 
@@ -264,11 +263,3 @@ The demo script is included in:
 docs/AI_vs_Human_Text_Detection_Demo_Script_and_Submission_Guide.docx
 ```
 
----
-
-## 11. Important Notes
-
-- Do not upload your Hugging Face token to Canvas.
-- Do not include virtual environments, cache folders, or `.git` folders.
-- The deployed Space should be public so the instructor can open it.
-- The app is intended as a decision-support tool, not absolute proof of authorship.
