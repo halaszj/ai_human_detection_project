@@ -1,14 +1,3 @@
----
-title: AI vs. Human Text Detection
-colorFrom: blue
-colorTo: green
-sdk: streamlit
-sdk_version: "1.46.1"
-app_file: app.py
-python_version: "3.13"
-pinned: false
----
-
 # AI vs. Human Text Detection
 
 ## Public Hugging Face Spaces Deployment Link
