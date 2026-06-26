@@ -231,23 +231,4 @@ FINETUNED_COACH_MODEL=halaszj/ai-writing-coach-flan-t5
 6. Restart the Space.
 7. Confirm the app shows the fine-tuned LLM status panel.
 
----
-
-## 10. Canvas Submission Checklist
-
-The Canvas ZIP should include:
-
-- source code for the complete working application,
-- model files,
-- README.md,
-- requirements.txt,
-- Hugging Face Spaces deployment link,
-- demo video or demo video link,
-- optional fine-tuning notebook/documentation.
-
-The demo script is included in:
-
-```text
-docs/AI_vs_Human_Text_Detection_Demo_Script_and_Submission_Guide.docx
-```
 
