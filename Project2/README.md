@@ -157,8 +157,6 @@ Add this as a **Secret**:
 HF_TOKEN=your_hugging_face_token
 ```
 
-Do not include your actual token in the submitted ZIP file.
-
 ---
 
 ## 6. Application Features
