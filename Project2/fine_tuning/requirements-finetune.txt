@@ -1,9 +1,0 @@
-transformers
-datasets
-peft
-accelerate
-bitsandbytes
-sentencepiece
-huggingface_hub
-pandas
-openpyxl
